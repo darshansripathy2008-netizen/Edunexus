@@ -1,15 +1,14 @@
 require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
-const admin = require('firebase-admin');
+const { createClient } = require('@supabase/supabase-js');
 const bcrypt = require('bcryptjs');
-const serviceAccount = require('./serviceAccount.json');
 
-// Firebase init
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
-});
-const db = admin.firestore();
+// Supabase init (service role for server-side)
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY
+);
 
 const app = express();
 app.use(express.json());
@@ -26,7 +25,8 @@ app.use(session({
 // =====================
 function requireAuth(role) {
   return (req, res, next) => {
-    if (!req.session.user) return res.status(401).json({ success: false, message: 'Not logged in.' });
+    if (!req.session.user)
+      return res.status(401).json({ success: false, message: 'Not logged in.' });
     if (role && req.session.user.role !== role && req.session.user.role !== 'admin')
       return res.status(403).json({ success: false, message: 'Access denied.' });
     next();
@@ -37,27 +37,63 @@ function requireAuth(role) {
 // AUTH ROUTES
 // =====================
 
+// Register (used for seeding)
+app.post('/auth/register', async (req, res) => {
+  try {
+    const { name, email, password, role, extra } = req.body;
+
+    // Create auth user in Supabase
+    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true
+    });
+    if (authError) return res.json({ success: false, message: authError.message });
+
+    // Create profile
+    const { error: profileError } = await supabase.from('profiles').insert({
+      id: authData.user.id,
+      name, role, ...extra
+    });
+    if (profileError) return res.json({ success: false, message: profileError.message });
+
+    res.json({ success: true, id: authData.user.id });
+  } catch (err) {
+    res.json({ success: false, message: err.message });
+  }
+});
+
 // Login
 app.post('/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-    const e = email.toLowerCase().trim();
-    const snap = await db.collection('users').where('email', '==', e).get();
-    if (snap.empty) return res.json({ success: false, message: 'User not found.' });
-    const user = snap.docs[0].data();
-    const match = await bcrypt.compare(password, user.password);
-    if (!match) return res.json({ success: false, message: 'Wrong password.' });
+
+    // Sign in with Supabase Auth
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) return res.json({ success: false, message: 'Invalid email or password.' });
+
+    // Get profile
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', data.user.id)
+      .single();
+    if (profileError || !profile)
+      return res.json({ success: false, message: 'Profile not found.' });
+
     req.session.user = {
-      id: snap.docs[0].id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      avatar: user.avatar || ''
+      id: data.user.id,
+      name: profile.name,
+      email: data.user.email,
+      role: profile.role,
+      class: profile.class || '',
+      childId: profile.child_id || '',
+      supabaseToken: data.session.access_token
     };
-    res.json({ success: true, role: user.role, name: user.name });
+
+    res.json({ success: true, role: profile.role, name: profile.name });
   } catch (err) {
-    console.error(err);
-    res.json({ success: false, message: 'Server error.' });
+    res.json({ success: false, message: err.message });
   }
 });
 
@@ -79,38 +115,53 @@ app.get('/auth/me', (req, res) => {
 app.post('/admin/seed', async (req, res) => {
   try {
     const { password } = req.body;
-    if (password !== process.env.ADMIN_PASS)
+    if (password !== 'admin123')
       return res.json({ success: false, message: 'Wrong password.' });
 
-    const hash = async (p) => await bcrypt.hash(p, 10);
-
-    // Demo users
-    const users = [
-      { name: 'Admin', email: 'admin@edunexus.com', password: await hash('admin123'), role: 'admin' },
-      { name: 'Mrs. Priya Sharma', email: 'priya@edunexus.com', password: await hash('teacher123'), role: 'teacher', subject: 'Mathematics', class: '10A' },
-      { name: 'Mr. Arjun Kumar', email: 'arjun@edunexus.com', password: await hash('parent123'), role: 'parent', childId: 'student1' },
-      { name: 'Rahul Kumar', email: 'rahul@edunexus.com', password: await hash('student123'), role: 'student', class: '10A', parentId: 'parent1', rollNo: '101', points: 450 }
+    // Create users
+    const usersToCreate = [
+      { name: 'Admin User', email: 'admin@edunexus.com', password: 'admin123', role: 'admin', extra: {} },
+      { name: 'Mrs. Priya Sharma', email: 'priya@edunexus.com', password: 'teacher123', role: 'teacher', extra: { subject: 'Mathematics', class: '10A' } },
+      { name: 'Mr. Arjun Kumar', email: 'arjun@edunexus.com', password: 'parent123', role: 'parent', extra: {} },
+      { name: 'Rahul Kumar', email: 'rahul@edunexus.com', password: 'student123', role: 'student', extra: { class: '10A', roll_no: '101', points: 450 } }
     ];
 
-    const batch = db.batch();
-    const ids = ['admin1', 'teacher1', 'parent1', 'student1'];
-    users.forEach((u, i) => {
-      batch.set(db.collection('users').doc(ids[i]), u);
-    });
+    const userIds = {};
+    for (const u of usersToCreate) {
+      // Delete existing user if any
+      const { data: existing } = await supabase.auth.admin.listUsers();
+      const found = existing?.users?.find(eu => eu.email === u.email);
+      if (found) await supabase.auth.admin.deleteUser(found.id);
 
-    // Demo students
-    const students = [
-      { name: 'Rahul Kumar', class: '10A', rollNo: '101', parentId: 'parent1', points: 450, badges: ['🌟 Star Student', '📚 Bookworm'] },
-      { name: 'Priya Patel', class: '10A', rollNo: '102', parentId: 'parent2', points: 380, badges: ['🎯 On Target'] },
-      { name: 'Arjun Singh', class: '10A', rollNo: '103', parentId: 'parent3', points: 520, badges: ['🏆 Champion', '⚡ Quick Learner'] },
-      { name: 'Sneha Rao', class: '10A', rollNo: '104', parentId: 'parent4', points: 290, badges: ['💡 Creative'] },
-      { name: 'Karthik M', class: '10A', rollNo: '105', parentId: 'parent5', points: 410, badges: ['🌟 Star Student'] }
-    ];
-    students.forEach((s, i) => {
-      batch.set(db.collection('students').doc('student' + (i+1)), s);
-    });
+      const { data: authData, error } = await supabase.auth.admin.createUser({
+        email: u.email, password: u.password, email_confirm: true
+      });
+      if (error) { console.error(u.email, error); continue; }
 
-    // Demo grades
+      await supabase.from('profiles').upsert({
+        id: authData.user.id, name: u.name, role: u.role, ...u.extra
+      });
+      userIds[u.role] = authData.user.id;
+    }
+
+    // Create students
+    const { data: studentsData } = await supabase.from('students').upsert([
+      { name: 'Rahul Kumar', class: '10A', roll_no: '101', points: 450, badges: ['🌟 Star Student', '📚 Bookworm'] },
+      { name: 'Priya Patel', class: '10A', roll_no: '102', points: 380, badges: ['🎯 On Target'] },
+      { name: 'Arjun Singh', class: '10A', roll_no: '103', points: 520, badges: ['🏆 Champion', '⚡ Quick Learner'] },
+      { name: 'Sneha Rao', class: '10A', roll_no: '104', points: 290, badges: ['💡 Creative'] },
+      { name: 'Karthik M', class: '10A', roll_no: '105', points: 410, badges: ['🌟 Star Student'] }
+    ]).select();
+
+    // Update parent's child_id
+    if (studentsData && studentsData[0]) {
+      await supabase.from('profiles').update({ child_id: studentsData[0].id })
+        .eq('id', userIds['parent']);
+      await supabase.from('profiles').update({ child_id: studentsData[0].id })
+        .eq('email', 'rahul@edunexus.com');
+    }
+
+    // Create grades
     const subjects = ['Mathematics', 'Science', 'English', 'History', 'Computer Science'];
     const gradeData = [
       [85, 90, 78, 88, 95],
@@ -119,91 +170,100 @@ app.post('/admin/seed', async (req, res) => {
       [65, 70, 72, 68, 75],
       [88, 85, 90, 82, 92]
     ];
-    students.forEach((s, si) => {
-      subjects.forEach((sub, subI) => {
-        batch.set(db.collection('grades').doc(`student${si+1}_${sub}`), {
-          studentId: 'student' + (si+1),
-          subject: sub,
-          marks: gradeData[si][subI],
-          total: 100,
-          grade: gradeData[si][subI] >= 90 ? 'A+' : gradeData[si][subI] >= 80 ? 'A' : gradeData[si][subI] >= 70 ? 'B' : 'C',
-          date: new Date().toISOString()
+    if (studentsData) {
+      const gradesInsert = [];
+      studentsData.forEach((s, si) => {
+        subjects.forEach((sub, subI) => {
+          const marks = gradeData[si][subI];
+          gradesInsert.push({
+            student_id: s.id, subject: sub, marks,
+            total: 100,
+            grade: marks >= 90 ? 'A+' : marks >= 80 ? 'A' : marks >= 70 ? 'B' : 'C'
+          });
         });
       });
-    });
+      await supabase.from('grades').upsert(gradesInsert);
+    }
 
-    // Demo attendance (last 7 days)
-    students.forEach((s, si) => {
-      for (let d = 0; d < 7; d++) {
-        const date = new Date();
-        date.setDate(date.getDate() - d);
-        const dateStr = date.toISOString().split('T')[0];
-        batch.set(db.collection('attendance').doc(`student${si+1}_${dateStr}`), {
-          studentId: 'student' + (si+1),
-          date: dateStr,
-          status: Math.random() > 0.15 ? 'present' : 'absent'
-        });
+    // Create attendance (last 7 days)
+    if (studentsData) {
+      const attendanceInsert = [];
+      studentsData.forEach(s => {
+        for (let d = 0; d < 7; d++) {
+          const date = new Date();
+          date.setDate(date.getDate() - d);
+          attendanceInsert.push({
+            student_id: s.id,
+            date: date.toISOString().split('T')[0],
+            status: Math.random() > 0.15 ? 'present' : 'absent'
+          });
+        }
+      });
+      await supabase.from('attendance').upsert(attendanceInsert, { onConflict: 'student_id,date' });
+    }
+
+    // Create announcements
+    await supabase.from('announcements').upsert([
+      { title: '📝 Unit Test Next Week', message: 'Unit test scheduled from Monday. Students must carry ID cards.', by_name: 'Mrs. Priya Sharma', important: true },
+      { title: '🏖️ School Picnic', message: 'Annual school picnic on 25th June. Permission slips due Friday.', by_name: 'Mrs. Priya Sharma', important: false },
+      { title: '📚 Library Books Due', message: 'All library books must be returned before end of term.', by_name: 'Mrs. Priya Sharma', important: false }
+    ]);
+
+    // Create homework
+    if (studentsData) {
+      const { data: hwData } = await supabase.from('homework').upsert([
+        { title: 'Math Chapter 5 Exercise', subject: 'Mathematics', description: 'Complete exercises 5.1 to 5.4', due_date: new Date(Date.now() + 86400000).toISOString(), points: 50 },
+        { title: 'Science Lab Report', subject: 'Science', description: 'Write lab report on photosynthesis experiment', due_date: new Date(Date.now() + 2*86400000).toISOString(), points: 75 },
+        { title: 'English Essay', subject: 'English', description: 'Write 500 word essay on climate change', due_date: new Date(Date.now() + 3*86400000).toISOString(), points: 60 }
+      ]).select();
+
+      // Add some submissions
+      if (hwData && studentsData[0]) {
+        await supabase.from('homework_submissions').upsert([
+          { homework_id: hwData[0].id, student_id: studentsData[0].id },
+          { homework_id: hwData[1].id, student_id: studentsData[0].id },
+          { homework_id: hwData[1].id, student_id: studentsData[1].id }
+        ], { onConflict: 'homework_id,student_id' });
       }
-    });
+    }
 
-    // Demo announcements
-    const announcements = [
-      { title: '📝 Unit Test Next Week', message: 'Unit test for all subjects scheduled from Monday. Students must carry their ID cards.', by: 'teacher1', byName: 'Mrs. Priya Sharma', date: new Date().toISOString(), important: true },
-      { title: '🏖️ School Picnic', message: 'Annual school picnic on 25th June. Permission slips to be submitted by Friday.', by: 'teacher1', byName: 'Mrs. Priya Sharma', date: new Date().toISOString(), important: false },
-      { title: '📚 Library Books Due', message: 'All library books must be returned before end of term.', by: 'teacher1', byName: 'Mrs. Priya Sharma', date: new Date().toISOString(), important: false }
-    ];
-    announcements.forEach((a, i) => {
-      batch.set(db.collection('announcements').doc('ann' + (i+1)), a);
-    });
-
-    // Demo homework
-    const homeworks = [
-      { title: 'Math Chapter 5 Exercise', subject: 'Mathematics', dueDate: new Date(Date.now() + 86400000).toISOString(), points: 50, submittedBy: ['student1', 'student3'], by: 'teacher1' },
-      { title: 'Science Lab Report', subject: 'Science', dueDate: new Date(Date.now() + 2*86400000).toISOString(), points: 75, submittedBy: ['student1', 'student2', 'student3'], by: 'teacher1' },
-      { title: 'English Essay', subject: 'English', dueDate: new Date(Date.now() + 3*86400000).toISOString(), points: 60, submittedBy: ['student2'], by: 'teacher1' }
-    ];
-    homeworks.forEach((h, i) => {
-      batch.set(db.collection('homework').doc('hw' + (i+1)), h);
-    });
-
-    // Demo wellness check-ins
-    const moods = [4, 3, 5, 2, 4, 3, 5];
-    const messages = [
-      'Feeling good today!',
-      'A bit stressed about exams',
-      'Had a great day!',
-      'Feeling overwhelmed with homework',
-      'Pretty normal day',
-      'Tired but okay',
-      'Excited about the picnic!'
-    ];
-    moods.forEach((mood, i) => {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      batch.set(db.collection('wellness').doc('w' + (i+1)), {
-        studentId: 'student1',
-        mood,
-        message: messages[i],
-        sentiment: mood >= 4 ? 'positive' : mood === 3 ? 'neutral' : 'negative',
-        date: date.toISOString(),
-        anonymous: true
+    // Create wellness check-ins
+    if (studentsData) {
+      const moods = [4, 3, 5, 2, 4, 3, 5];
+      const messages = [
+        'Feeling good today!', 'A bit stressed about exams', 'Had a great day!',
+        'Feeling overwhelmed', 'Pretty normal day', 'Tired but okay', 'Excited about picnic!'
+      ];
+      const wellnessInsert = moods.map((mood, i) => {
+        const date = new Date();
+        date.setDate(date.getDate() - i);
+        return {
+          student_id: studentsData[0].id, mood, message: messages[i],
+          sentiment: mood >= 4 ? 'positive' : mood === 3 ? 'neutral' : 'negative',
+          created_at: date.toISOString()
+        };
       });
-    });
+      await supabase.from('wellness').upsert(wellnessInsert);
+    }
 
-    // Demo chat
-    batch.set(db.collection('chats').doc('chat_teacher1_parent1'), {
-      teacherId: 'teacher1',
-      parentId: 'parent1',
-      studentId: 'student1',
-      messages: [
-        { from: 'teacher1', fromName: 'Mrs. Priya', text: 'Hello! Rahul has been doing great in class recently.', time: new Date(Date.now() - 3600000).toISOString() },
-        { from: 'parent1', fromName: 'Mr. Arjun', text: 'Thank you! He has been studying hard at home too.', time: new Date(Date.now() - 1800000).toISOString() },
-        { from: 'teacher1', fromName: 'Mrs. Priya', text: 'Please make sure he submits the Math homework by tomorrow.', time: new Date(Date.now() - 900000).toISOString() }
-      ]
-    });
+    // Create chat
+    if (userIds['teacher'] && userIds['parent'] && studentsData) {
+      const { data: chatData } = await supabase.from('chats').upsert({
+        teacher_id: userIds['teacher'],
+        parent_id: userIds['parent'],
+        student_id: studentsData[0].id
+      }, { onConflict: 'teacher_id,parent_id' }).select().single();
 
-    await batch.commit();
-    res.json({ success: true, message: 'Demo data seeded successfully!' });
+      if (chatData) {
+        await supabase.from('messages').upsert([
+          { chat_id: chatData.id, from_id: userIds['teacher'], from_name: 'Mrs. Priya', text: 'Hello! Rahul has been doing great in class recently.', created_at: new Date(Date.now() - 3600000).toISOString() },
+          { chat_id: chatData.id, from_id: userIds['parent'], from_name: 'Mr. Arjun', text: 'Thank you! He has been studying hard at home too.', created_at: new Date(Date.now() - 1800000).toISOString() },
+          { chat_id: chatData.id, from_id: userIds['teacher'], from_name: 'Mrs. Priya', text: 'Please make sure he submits the Math homework by tomorrow.', created_at: new Date(Date.now() - 900000).toISOString() }
+        ]);
+      }
+    }
+
+    res.json({ success: true, message: '✅ Demo data seeded successfully!' });
   } catch (err) {
     console.error(err);
     res.json({ success: false, message: err.message });
@@ -211,233 +271,282 @@ app.post('/admin/seed', async (req, res) => {
 });
 
 // =====================
-// DASHBOARD ROUTES
+// TEACHER ROUTES
 // =====================
-
-// Teacher dashboard data
 app.get('/api/teacher/dashboard', requireAuth('teacher'), async (req, res) => {
   try {
-    const [studentsSnap, announcementsSnap, homeworkSnap, wellnessSnap] = await Promise.all([
-      db.collection('students').where('class', '==', '10A').get(),
-      db.collection('announcements').orderBy('date', 'desc').limit(5).get(),
-      db.collection('homework').where('by', '==', req.session.user.id).get(),
-      db.collection('wellness').orderBy('date', 'desc').limit(10).get()
+    const [students, announcements, homework, wellness] = await Promise.all([
+      supabase.from('students').select('*').eq('class', '10A'),
+      supabase.from('announcements').select('*').order('created_at', { ascending: false }).limit(5),
+      supabase.from('homework').select('*, homework_submissions(count)').order('created_at', { ascending: false }),
+      supabase.from('wellness').select('*').order('created_at', { ascending: false }).limit(20)
     ]);
 
-    const students = studentsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-    const announcements = announcementsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-    const homework = homeworkSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-    const wellness = wellnessSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const wellnessData = wellness.data || [];
+    const avgMood = wellnessData.length
+      ? (wellnessData.reduce((s, w) => s + w.mood, 0) / wellnessData.length).toFixed(1) : 0;
+    const negativeMoods = wellnessData.filter(w => w.mood <= 2).length;
 
-    const avgMood = wellness.length ? (wellness.reduce((s, w) => s + w.mood, 0) / wellness.length).toFixed(1) : 0;
-    const negativeMoods = wellness.filter(w => w.mood <= 2).length;
-
-    res.json({ success: true, students, announcements, homework, avgMood, negativeMoods });
-  } catch (err) {
-    res.json({ success: false, message: err.message });
-  }
-});
-
-// Parent dashboard data
-app.get('/api/parent/dashboard', requireAuth('parent'), async (req, res) => {
-  try {
-    const userSnap = await db.collection('users').doc(req.session.user.id).get();
-    const childId = userSnap.data().childId;
-    const [studentSnap, gradesSnap, attendanceSnap, announcementsSnap, wellnessSnap] = await Promise.all([
-      db.collection('students').doc(childId).get(),
-      db.collection('grades').where('studentId', '==', childId).get(),
-      db.collection('attendance').where('studentId', '==', childId).orderBy('date', 'desc').limit(14).get(),
-      db.collection('announcements').orderBy('date', 'desc').limit(5).get(),
-      db.collection('wellness').where('studentId', '==', childId).orderBy('date', 'desc').limit(7).get()
-    ]);
-
-    const student = { id: studentSnap.id, ...studentSnap.data() };
-    const grades = gradesSnap.docs.map(d => d.data());
-    const attendance = attendanceSnap.docs.map(d => d.data());
-    const announcements = announcementsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-    const wellness = wellnessSnap.docs.map(d => d.data());
-    const presentDays = attendance.filter(a => a.status === 'present').length;
-    const attendancePct = attendance.length ? Math.round(presentDays / attendance.length * 100) : 0;
-    const avgGrade = grades.length ? Math.round(grades.reduce((s, g) => s + g.marks, 0) / grades.length) : 0;
-
-    res.json({ success: true, student, grades, attendance, announcements, wellness, attendancePct, avgGrade });
-  } catch (err) {
-    res.json({ success: false, message: err.message });
-  }
-});
-
-// Student dashboard data
-app.get('/api/student/dashboard', requireAuth('student'), async (req, res) => {
-  try {
-    const [studentSnap, gradesSnap, attendanceSnap, homeworkSnap, announcementsSnap] = await Promise.all([
-      db.collection('students').doc(req.session.user.id).get(),
-      db.collection('grades').where('studentId', '==', req.session.user.id).get(),
-      db.collection('attendance').where('studentId', '==', req.session.user.id).orderBy('date', 'desc').limit(7).get(),
-      db.collection('homework').get(),
-      db.collection('announcements').orderBy('date', 'desc').limit(5).get()
-    ]);
-
-    const student = studentSnap.exists ? { id: studentSnap.id, ...studentSnap.data() } : {};
-    const grades = gradesSnap.docs.map(d => d.data());
-    const attendance = attendanceSnap.docs.map(d => d.data());
-    const homework = homeworkSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-    const announcements = announcementsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-
-    res.json({ success: true, student, grades, attendance, homework, announcements });
-  } catch (err) {
-    res.json({ success: false, message: err.message });
-  }
-});
-
-// Post announcement
-app.post('/api/announcements', requireAuth('teacher'), async (req, res) => {
-  try {
-    const { title, message, important } = req.body;
-    await db.collection('announcements').add({
-      title, message, important: important || false,
-      by: req.session.user.id,
-      byName: req.session.user.name,
-      date: new Date().toISOString()
+    res.json({
+      success: true,
+      students: students.data || [],
+      announcements: announcements.data || [],
+      homework: homework.data || [],
+      avgMood, negativeMoods
     });
+  } catch (err) {
+    res.json({ success: false, message: err.message });
+  }
+});
+
+app.get('/api/teacher/students', requireAuth('teacher'), async (req, res) => {
+  try {
+    const { data: students } = await supabase.from('students').select(`
+      *, grades(*), attendance(*)
+    `).eq('class', '10A');
+    res.json({ success: true, students: students || [] });
+  } catch (err) {
+    res.json({ success: false, message: err.message });
+  }
+});
+
+app.post('/api/attendance', requireAuth('teacher'), async (req, res) => {
+  try {
+    const { attendance } = req.body;
+    const today = new Date().toISOString().split('T')[0];
+    const rows = attendance.map(({ studentId, status }) => ({
+      student_id: studentId, date: today, status
+    }));
+    const { error } = await supabase.from('attendance')
+      .upsert(rows, { onConflict: 'student_id,date' });
+    if (error) return res.json({ success: false, message: error.message });
     res.json({ success: true });
   } catch (err) {
     res.json({ success: false, message: err.message });
   }
 });
 
-// Post wellness check-in
+app.post('/api/announcements', requireAuth('teacher'), async (req, res) => {
+  try {
+    const { title, message, important } = req.body;
+    const { error } = await supabase.from('announcements').insert({
+      title, message, important: important || false,
+      by_id: req.session.user.id, by_name: req.session.user.name
+    });
+    if (error) return res.json({ success: false, message: error.message });
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false, message: err.message });
+  }
+});
+
+app.post('/api/homework', requireAuth('teacher'), async (req, res) => {
+  try {
+    const { title, subject, description, dueDate, points } = req.body;
+    const { error } = await supabase.from('homework').insert({
+      title, subject, description, due_date: dueDate,
+      points: points || 50, by_id: req.session.user.id
+    });
+    if (error) return res.json({ success: false, message: error.message });
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false, message: err.message });
+  }
+});
+
+app.get('/api/gatepasses', requireAuth('teacher'), async (req, res) => {
+  try {
+    const { data, error } = await supabase.from('gatepasses')
+      .select('*').order('created_at', { ascending: false });
+    if (error) return res.json({ success: false, message: error.message });
+    res.json({ success: true, passes: data });
+  } catch (err) {
+    res.json({ success: false, message: err.message });
+  }
+});
+
+app.post('/api/gatepass/update', requireAuth('teacher'), async (req, res) => {
+  try {
+    const { passId, status } = req.body;
+    const { error } = await supabase.from('gatepasses').update({
+      status, approved_by: req.session.user.name
+    }).eq('id', passId);
+    if (error) return res.json({ success: false, message: error.message });
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false, message: err.message });
+  }
+});
+
+// =====================
+// PARENT ROUTES
+// =====================
+app.get('/api/parent/dashboard', requireAuth('parent'), async (req, res) => {
+  try {
+    const { data: profile } = await supabase.from('profiles')
+      .select('*').eq('id', req.session.user.id).single();
+
+    const childId = profile?.child_id;
+    if (!childId) return res.json({ success: false, message: 'No child linked.' });
+
+    const [student, grades, attendance, announcements, wellness] = await Promise.all([
+      supabase.from('students').select('*').eq('id', childId).single(),
+      supabase.from('grades').select('*').eq('student_id', childId),
+      supabase.from('attendance').select('*').eq('student_id', childId).order('date', { ascending: false }).limit(14),
+      supabase.from('announcements').select('*').order('created_at', { ascending: false }).limit(5),
+      supabase.from('wellness').select('*').eq('student_id', childId).order('created_at', { ascending: false }).limit(7)
+    ]);
+
+    const att = attendance.data || [];
+    const presentDays = att.filter(a => a.status === 'present').length;
+    const attendancePct = att.length ? Math.round(presentDays / att.length * 100) : 0;
+    const gr = grades.data || [];
+    const avgGrade = gr.length ? Math.round(gr.reduce((s, g) => s + g.marks, 0) / gr.length) : 0;
+
+    res.json({
+      success: true,
+      student: student.data,
+      grades: gr,
+      attendance: att,
+      announcements: announcements.data || [],
+      wellness: wellness.data || [],
+      attendancePct, avgGrade
+    });
+  } catch (err) {
+    res.json({ success: false, message: err.message });
+  }
+});
+
+// =====================
+// STUDENT ROUTES
+// =====================
+app.get('/api/student/dashboard', requireAuth('student'), async (req, res) => {
+  try {
+    const { data: profile } = await supabase.from('profiles')
+      .select('*').eq('id', req.session.user.id).single();
+
+    const childId = profile?.child_id || req.session.user.id;
+
+    const [grades, attendance, homework, announcements, submissions] = await Promise.all([
+      supabase.from('grades').select('*').eq('student_id', childId),
+      supabase.from('attendance').select('*').eq('student_id', childId).order('date', { ascending: false }).limit(7),
+      supabase.from('homework').select('*').order('due_date', { ascending: true }),
+      supabase.from('announcements').select('*').order('created_at', { ascending: false }).limit(5),
+      supabase.from('homework_submissions').select('homework_id').eq('student_id', childId)
+    ]);
+
+    res.json({
+      success: true,
+      profile,
+      grades: grades.data || [],
+      attendance: attendance.data || [],
+      homework: homework.data || [],
+      announcements: announcements.data || [],
+      submittedIds: (submissions.data || []).map(s => s.homework_id)
+    });
+  } catch (err) {
+    res.json({ success: false, message: err.message });
+  }
+});
+
 app.post('/api/wellness', requireAuth('student'), async (req, res) => {
   try {
     const { mood, message } = req.body;
     const sentiment = mood >= 4 ? 'positive' : mood === 3 ? 'neutral' : 'negative';
-    await db.collection('wellness').add({
-      studentId: req.session.user.id,
-      mood: parseInt(mood),
-      message: message || '',
-      sentiment,
-      date: new Date().toISOString(),
-      anonymous: true
+    const { data: profile } = await supabase.from('profiles')
+      .select('child_id').eq('id', req.session.user.id).single();
+
+    const { error } = await supabase.from('wellness').insert({
+      student_id: profile?.child_id || req.session.user.id,
+      mood: parseInt(mood), message: message || '',
+      sentiment, anonymous: true
     });
+    if (error) return res.json({ success: false, message: error.message });
     res.json({ success: true });
   } catch (err) {
     res.json({ success: false, message: err.message });
   }
 });
 
-// Submit homework
 app.post('/api/homework/submit', requireAuth('student'), async (req, res) => {
   try {
     const { homeworkId } = req.body;
-    const hwRef = db.collection('homework').doc(homeworkId);
-    const hw = await hwRef.get();
-    if (!hw.exists) return res.json({ success: false, message: 'Homework not found.' });
-    const submittedBy = hw.data().submittedBy || [];
-    if (submittedBy.includes(req.session.user.id))
-      return res.json({ success: false, message: 'Already submitted.' });
-    submittedBy.push(req.session.user.id);
-    await hwRef.update({ submittedBy });
-    const studentRef = db.collection('students').doc(req.session.user.id);
-    const student = await studentRef.get();
-    if (student.exists) {
-      await studentRef.update({ points: (student.data().points || 0) + hw.data().points });
-    }
-    res.json({ success: true, pointsEarned: hw.data().points });
+    const { data: profile } = await supabase.from('profiles')
+      .select('child_id').eq('id', req.session.user.id).single();
+    const studentId = profile?.child_id || req.session.user.id;
+
+    const { error } = await supabase.from('homework_submissions')
+      .upsert({ homework_id: homeworkId, student_id: studentId },
+        { onConflict: 'homework_id,student_id' });
+    if (error) return res.json({ success: false, message: error.message });
+
+    const { data: hw } = await supabase.from('homework').select('points').eq('id', homeworkId).single();
+    const points = hw?.points || 50;
+    await supabase.from('students').update({ points: supabase.rpc('increment', { x: points }) })
+      .eq('id', studentId);
+
+    res.json({ success: true, pointsEarned: points });
   } catch (err) {
     res.json({ success: false, message: err.message });
   }
 });
 
-// Get chat
-app.get('/api/chat/:otherId', requireAuth(), async (req, res) => {
+app.post('/api/gatepass', requireAuth('student'), async (req, res) => {
+  try {
+    const { reason, exitTime } = req.body;
+    const { error } = await supabase.from('gatepasses').insert({
+      student_id: req.session.user.id,
+      student_name: req.session.user.name,
+      reason, exit_time: exitTime, status: 'pending'
+    });
+    if (error) return res.json({ success: false, message: error.message });
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false, message: err.message });
+  }
+});
+
+// =====================
+// CHAT ROUTES
+// =====================
+app.get('/api/chat/get', requireAuth(), async (req, res) => {
   try {
     const user = req.session.user;
-    const chatId = user.role === 'teacher'
-      ? `chat_${user.id}_${req.params.otherId}`
-      : `chat_${req.params.otherId}_${user.id}`;
-    const chatSnap = await db.collection('chats').doc(chatId).get();
-    const messages = chatSnap.exists ? chatSnap.data().messages || [] : [];
-    res.json({ success: true, messages, chatId });
+    let chat;
+    if (user.role === 'teacher') {
+      const { data } = await supabase.from('chats').select('*, messages(*)').eq('teacher_id', user.id);
+      chat = data?.[0];
+    } else if (user.role === 'parent') {
+      const { data } = await supabase.from('chats').select('*, messages(*)').eq('parent_id', user.id);
+      chat = data?.[0];
+    }
+    if (!chat) return res.json({ success: true, messages: [], chatId: null });
+    const messages = (chat.messages || []).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    res.json({ success: true, messages, chatId: chat.id });
   } catch (err) {
     res.json({ success: false, message: err.message });
   }
 });
 
-// Send chat message
 app.post('/api/chat/send', requireAuth(), async (req, res) => {
   try {
     const { chatId, text } = req.body;
     const user = req.session.user;
-    const chatRef = db.collection('chats').doc(chatId);
-    const chatSnap = await chatRef.get();
-    const messages = chatSnap.exists ? chatSnap.data().messages || [] : [];
-    messages.push({
-      from: user.id,
-      fromName: user.name,
-      text,
-      time: new Date().toISOString()
-    });
-    await chatRef.set({ messages }, { merge: true });
-    res.json({ success: true });
-  } catch (err) {
-    res.json({ success: false, message: err.message });
-  }
-});
+    let finalChatId = chatId;
 
-// Mark attendance
-app.post('/api/attendance', requireAuth('teacher'), async (req, res) => {
-  try {
-    const { attendance } = req.body;
-    const batch = db.batch();
-    const today = new Date().toISOString().split('T')[0];
-    attendance.forEach(({ studentId, status }) => {
-      batch.set(db.collection('attendance').doc(`${studentId}_${today}`), {
-        studentId, status, date: today
-      });
-    });
-    await batch.commit();
-    res.json({ success: true });
-  } catch (err) {
-    res.json({ success: false, message: err.message });
-  }
-});
+    if (!finalChatId) {
+      const { data: newChat } = await supabase.from('chats').upsert({
+        teacher_id: user.role === 'teacher' ? user.id : null,
+        parent_id: user.role === 'parent' ? user.id : null
+      }).select().single();
+      finalChatId = newChat?.id;
+    }
 
-// Gate pass request
-app.post('/api/gatepass', requireAuth('student'), async (req, res) => {
-  try {
-    const { reason, exitTime } = req.body;
-    await db.collection('gatepasses').add({
-      studentId: req.session.user.id,
-      studentName: req.session.user.name,
-      reason, exitTime,
-      status: 'pending',
-      date: new Date().toISOString()
+    const { error } = await supabase.from('messages').insert({
+      chat_id: finalChatId, from_id: user.id,
+      from_name: user.name, text
     });
-    res.json({ success: true });
-  } catch (err) {
-    res.json({ success: false, message: err.message });
-  }
-});
-
-// Get gate passes (teacher)
-app.get('/api/gatepasses', requireAuth('teacher'), async (req, res) => {
-  try {
-    const snap = await db.collection('gatepasses').orderBy('date', 'desc').get();
-    const passes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    res.json({ success: true, passes });
-  } catch (err) {
-    res.json({ success: false, message: err.message });
-  }
-});
-
-// Approve/reject gate pass
-app.post('/api/gatepass/update', requireAuth('teacher'), async (req, res) => {
-  try {
-    const { passId, status } = req.body;
-    await db.collection('gatepasses').doc(passId).update({
-      status,
-      approvedBy: req.session.user.name,
-      updatedAt: new Date().toISOString()
-    });
+    if (error) return res.json({ success: false, message: error.message });
     res.json({ success: true });
   } catch (err) {
     res.json({ success: false, message: err.message });
