@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EduNexus — Connect. Learn. Grow.</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0d0d1a; --surface: #13131f; --surface2: #1a1a2e;
+      --border: rgba(255,255,255,0.06); --border-hover: rgba(255,255,255,0.12);
+      --purple: #6c63ff; --purple-dim: rgba(108,99,255,0.15);
+      --cyan: #00d4ff; --cyan-dim: rgba(0,212,255,0.1);
+      --pink: #ff6584; --pink-dim: rgba(255,101,132,0.15);
+      --green: #10b981; --green-dim: rgba(16,185,129,0.15);
+      --text: #f0f0ff; --text2: #8888aa; --text3: #444466;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+
+    /* Animated background */
+    .bg-orbs { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+    .orb { position: absolute; border-radius: 50%; filter: blur(80px); opacity: 0.15; animation: float 8s ease-in-out infinite; }
+    .orb1 { width: 400px; height: 400px; background: var(--purple); top: -100px; left: -100px; animation-delay: 0s; }
+    .orb2 { width: 300px; height: 300px; background: var(--cyan); bottom: -80px; right: -80px; animation-delay: 3s; }
+    .orb3 { width: 200px; height: 200px; background: var(--pink); top: 50%; left: 50%; animation-delay: 5s; }
+    @keyframes float { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(30px,-30px) scale(1.05); } }
+
+    .container { position: relative; z-index: 1; width: 100%; max-width: 460px; padding: 20px; }
+
+    /* Logo */
+    .logo { text-align: center; margin-bottom: 32px; }
+    .logo-icon { width: 64px; height: 64px; background: linear-gradient(135deg, var(--purple), var(--cyan)); border-radius: 18px; display: flex; align-items: center; justify-content: center; font-size: 1.8rem; margin: 0 auto 14px; box-shadow: 0 0 40px rgba(108,99,255,0.4); animation: pulse 3s ease infinite; }
+    @keyframes pulse { 0%,100% { box-shadow: 0 0 40px rgba(108,99,255,0.4); } 50% { box-shadow: 0 0 60px rgba(108,99,255,0.7); } }
+    .logo-name { font-size: 2rem; font-weight: 900; letter-spacing: -0.04em; background: linear-gradient(135deg, var(--purple), var(--cyan)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .logo-tagline { font-size: 0.82rem; color: var(--text2); margin-top: 4px; letter-spacing: 0.05em; }
+
+    /* Card */
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 24px; padding: 36px; backdrop-filter: blur(20px); }
+    .card-title { font-size: 1.3rem; font-weight: 800; margin-bottom: 4px; }
+    .card-sub { color: var(--text2); font-size: 0.85rem; margin-bottom: 28px; }
+
+    /* Role selector */
+    .role-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-bottom: 24px; }
+    .role-btn { padding: 12px 8px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface2); cursor: pointer; text-align: center; transition: all 0.2s; }
+    .role-btn:hover { border-color: var(--border-hover); }
+    .role-btn.active { border-color: var(--purple); background: var(--purple-dim); }
+    .role-icon { font-size: 1.3rem; display: block; margin-bottom: 4px; }
+    .role-label { font-size: 0.72rem; font-weight: 600; color: var(--text2); }
+    .role-btn.active .role-label { color: var(--purple); }
+
+    /* Input */
+    .input-group { margin-bottom: 14px; }
+    .input-label { font-size: 0.73rem; font-weight: 600; color: var(--text2); margin-bottom: 7px; display: block; text-transform: uppercase; letter-spacing: 0.07em; }
+    .input-wrap { display: flex; align-items: center; gap: 10px; background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; padding: 13px 16px; transition: border-color 0.2s; }
+    .input-wrap:focus-within { border-color: var(--purple); box-shadow: 0 0 0 3px rgba(108,99,255,0.1); }
+    .input-wrap input { flex: 1; background: none; border: none; outline: none; color: var(--text); font-family: 'Inter', sans-serif; font-size: 0.9rem; }
+    .input-wrap input::placeholder { color: var(--text3); }
+
+    /* Button */
+    .btn-login { width: 100%; padding: 14px; background: linear-gradient(135deg, var(--purple), #8b5cf6); border: none; border-radius: 12px; color: #fff; font-family: 'Inter', sans-serif; font-size: 0.95rem; font-weight: 700; cursor: pointer; transition: all 0.2s; position: relative; overflow: hidden; margin-top: 8px; }
+    .btn-login::before { content: ''; position: absolute; inset: 0; background: linear-gradient(135deg, rgba(255,255,255,0.1), transparent); }
+    .btn-login:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(108,99,255,0.4); }
+    .btn-login:disabled { opacity: 0.6; pointer-events: none; }
+
+    /* Message */
+    .msg { margin-top: 12px; padding: 10px 14px; border-radius: 10px; font-size: 0.82rem; font-weight: 500; display: none; }
+    .msg.show { display: block; }
+    .msg.error { background: var(--pink-dim); color: var(--pink); border: 1px solid rgba(255,101,132,0.25); }
+    .msg.success { background: var(--green-dim); color: var(--green); border: 1px solid rgba(16,185,129,0.25); }
+
+    /* Demo credentials */
+    .demo-box { margin-top: 20px; background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+    .demo-title { font-size: 0.7rem; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 10px; }
+    .demo-row { display: flex; justify-content: space-between; padding: 5px 0; font-size: 0.75rem; cursor: pointer; border-radius: 6px; padding: 6px 8px; transition: background 0.15s; }
+    .demo-row:hover { background: rgba(108,99,255,0.1); }
+    .demo-role { color: var(--purple); font-weight: 600; }
+    .demo-creds { color: var(--text2); font-family: monospace; }
+
+    /* Footer */
+    .footer { text-align: center; margin-top: 20px; font-size: 0.75rem; color: var(--text3); }
+  </style>
+</head>
+<body>
+<div class="bg-orbs">
+  <div class="orb orb1"></div>
+  <div class="orb orb2"></div>
+  <div class="orb orb3"></div>
+</div>
+
+<div class="container">
+  <div class="logo">
+    <div class="logo-icon">🎓</div>
+    <div class="logo-name">EduNexus</div>
+    <div class="logo-tagline">Connect · Learn · Grow</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Welcome back 👋</div>
+    <div class="card-sub">Sign in to your EduNexus account</div>
+
+    <!-- Role Selector -->
+    <div class="role-grid">
+      <div class="role-btn active" onclick="selectRole('teacher', this)">
+        <span class="role-icon">👩‍🏫</span>
+        <span class="role-label">Teacher</span>
+      </div>
+      <div class="role-btn" onclick="selectRole('parent', this)">
+        <span class="role-icon">👨‍👩‍👧</span>
+        <span class="role-label">Parent</span>
+      </div>
+      <div class="role-btn" onclick="selectRole('student', this)">
+        <span class="role-icon">🎒</span>
+        <span class="role-label">Student</span>
+      </div>
+    </div>
+
+    <!-- Login Form -->
+    <div class="input-group">
+      <label class="input-label">Email Address</label>
+      <div class="input-wrap">
+        <span>✉️</span>
+        <input id="emailInput" type="email" placeholder="your@email.com">
+      </div>
+    </div>
+    <div class="input-group">
+      <label class="input-label">Password</label>
+      <div class="input-wrap">
+        <span>🔐</span>
+        <input id="passInput" type="password" placeholder="Enter your password">
+      </div>
+    </div>
+
+    <button class="btn-login" onclick="login()" id="loginBtn">
+      Sign In →
+    </button>
+    <div class="msg" id="loginMsg"></div>
+
+    <!-- Demo Credentials -->
+    <div class="demo-box">
+      <div class="demo-title">🧪 Demo Accounts — Click to autofill</div>
+      <div class="demo-row" onclick="autofill('priya@edunexus.com','teacher123')">
+        <span class="demo-role">👩‍🏫 Teacher</span>
+        <span class="demo-creds">priya@edunexus.com / teacher123</span>
+      </div>
+      <div class="demo-row" onclick="autofill('arjun@edunexus.com','parent123')">
+        <span class="demo-role">👨‍👩‍👧 Parent</span>
+        <span class="demo-creds">arjun@edunexus.com / parent123</span>
+      </div>
+      <div class="demo-row" onclick="autofill('rahul@edunexus.com','student123')">
+        <span class="demo-role">🎒 Student</span>
+        <span class="demo-creds">rahul@edunexus.com / student123</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">EduNexus © 2026 · Secure School Communication Platform</div>
+</div>
+
+<script>
+  let selectedRole = 'teacher';
+
+  function selectRole(role, el) {
+    selectedRole = role;
+    document.querySelectorAll('.role-btn').forEach(b => b.classList.remove('active'));
+    el.classList.add('active');
+    const placeholders = {
+      teacher: 'priya@edunexus.com',
+      parent: 'arjun@edunexus.com',
+      student: 'rahul@edunexus.com'
+    };
+    document.getElementById('emailInput').placeholder = placeholders[role];
+  }
+
+  function autofill(email, pass) {
+    document.getElementById('emailInput').value = email;
+    document.getElementById('passInput').value = pass;
+  }
+
+  async function login() {
+    const email = document.getElementById('emailInput').value.trim();
+    const password = document.getElementById('passInput').value;
+    if (!email || !password) return showMsg('⚠️ Please enter email and password.', 'error');
+    const btn = document.getElementById('loginBtn');
+    btn.disabled = true;
+    btn.textContent = 'Signing in...';
+    const res = await fetch('/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    }).then(r => r.json());
+    btn.disabled = false;
+    btn.textContent = 'Sign In →';
+    if (!res.success) return showMsg('❌ ' + res.message, 'error');
+    showMsg('✅ Welcome ' + res.name + '!', 'success');
+    setTimeout(() => {
+      const routes = {
+        teacher: '/teacher.html',
+        parent: '/parent.html',
+        student: '/student.html',
+        admin: '/admin.html'
+      };
+      window.location.href = routes[res.role] || '/login.html';
+    }, 800);
+  }
+
+  function showMsg(msg, type) {
+    const el = document.getElementById('loginMsg');
+    el.textContent = msg;
+    el.className = 'msg show ' + type;
+  }
+
+  // Enter key login
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Enter') login();
+  });
+
+  // Check if already logged in
+  fetch('/auth/me').then(r => r.json()).then(data => {
+    if (data.loggedIn) {
+      const routes = { teacher: '/teacher.html', parent: '/parent.html', student: '/student.html', admin: '/admin.html' };
+      window.location.href = routes[data.user.role] || '/login.html';
+    }
+  });
+</script>
+</body>
+</html>
