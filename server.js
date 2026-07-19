@@ -497,3 +497,14 @@ app.post('/api/chat/send', requireAuth(), async (req, res) => {
       finalChatId = newChat?.id;
     }
     await supabase.from('messages').insert({
+      chat_id: finalChatId, from_id: user.id,
+      from_name: user.name, text
+    });
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false, message: err.message });
+  }
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`✅ EduNexus running on port ${PORT}`));
