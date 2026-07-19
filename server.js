@@ -50,33 +50,13 @@ app.post('/auth/login', async (req, res) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return res.json({ success: false, message: 'Invalid email or password.' });
 
-    // Try finding profile by id first
-    let { data: profile } = await supabase
+    const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', data.user.id)
       .single();
-
-    // Fallback: find by email
-    if (!profile) {
-      const { data: profileByEmail } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('email', email.toLowerCase().trim())
-        .single();
-      profile = profileByEmail;
-    }
-
-    // Fallback: find by name match using email prefix
-    if (!profile) {
-      const { data: allProfiles } = await supabase
-        .from('profiles')
-        .select('*');
-      profile = allProfiles?.[0];
-    }
-
-    if (!profile)
-      return res.json({ success: false, message: 'Profile not found. Please seed data first.' });
+    if (profileError || !profile)
+      return res.json({ success: false, message: 'Profile not found.' });
 
     req.session.user = {
       id: data.user.id,
@@ -116,32 +96,58 @@ app.post('/admin/seed', async (req, res) => {
     if (password !== 'admin123')
       return res.json({ success: false, message: 'Wrong password.' });
 
+    const userIds = {};
+
+    // Create auth users and profiles one by one
     const usersToCreate = [
-      { name: 'Admin User', email: 'admin@edunexus.com', password: 'admin123', role: 'admin', extra: {} },
-      { name: 'Mrs. Priya Sharma', email: 'priya@edunexus.com', password: 'teacher123', role: 'teacher', extra: { subject: 'Mathematics', class: '10A' } },
-      { name: 'Mr. Arjun Kumar', email: 'arjun@edunexus.com', password: 'parent123', role: 'parent', extra: {} },
-      { name: 'Rahul Kumar', email: 'rahul@edunexus.com', password: 'student123', role: 'student', extra: { class: '10A', roll_no: '101', points: 450 } }
+      { name: 'Admin User', email: 'admin@edunexus.com', password: 'admin123', role: 'admin' },
+      { name: 'Mrs. Priya Sharma', email: 'priya@edunexus.com', password: 'teacher123', role: 'teacher', subject: 'Mathematics', class: '10A' },
+      { name: 'Mr. Arjun Kumar', email: 'arjun@edunexus.com', password: 'parent123', role: 'parent' },
+      { name: 'Rahul Kumar', email: 'rahul@edunexus.com', password: 'student123', role: 'student', class: '10A', roll_no: '101', points: 450 }
     ];
 
-    const userIds = {};
     for (const u of usersToCreate) {
+      // Delete if exists
       const { data: existing } = await supabase.auth.admin.listUsers();
       const found = existing?.users?.find(eu => eu.email === u.email);
-      if (found) await supabase.auth.admin.deleteUser(found.id);
+      if (found) {
+        await supabase.auth.admin.deleteUser(found.id);
+        await supabase.from('profiles').delete().eq('id', found.id);
+      }
 
-      const { data: authData, error } = await supabase.auth.admin.createUser({
-        email: u.email, password: u.password, email_confirm: true
+      // Create new auth user
+      const { data: authData, error: authErr } = await supabase.auth.admin.createUser({
+        email: u.email,
+        password: u.password,
+        email_confirm: true
       });
-      if (error) { console.error(u.email, error.message); continue; }
 
-      await supabase.from('profiles').upsert({
-        id: authData.user.id, name: u.name, role: u.role, ...u.extra
-      });
-      userIds[u.role] = authData.user.id;
+      if (authErr) {
+        console.error('Auth error for', u.email, authErr.message);
+        continue;
+      }
+
+      const uid = authData.user.id;
+      userIds[u.role] = uid;
+
+      // Create profile with SAME id as auth user
+      const profileData = {
+        id: uid,
+        name: u.name,
+        role: u.role,
+        email: u.email
+      };
+      if (u.subject) profileData.subject = u.subject;
+      if (u.class) profileData.class = u.class;
+      if (u.roll_no) profileData.roll_no = u.roll_no;
+      if (u.points) profileData.points = u.points;
+
+      const { error: profileErr } = await supabase.from('profiles').insert(profileData);
+      if (profileErr) console.error('Profile error for', u.email, profileErr.message);
     }
 
     // Create students
-    const { data: studentsData } = await supabase.from('students').upsert([
+    const { data: studentsData, error: studentsErr } = await supabase.from('students').insert([
       { name: 'Rahul Kumar', class: '10A', roll_no: '101', points: 450, badges: ['🌟 Star Student', '📚 Bookworm'] },
       { name: 'Priya Patel', class: '10A', roll_no: '102', points: 380, badges: ['🎯 On Target'] },
       { name: 'Arjun Singh', class: '10A', roll_no: '103', points: 520, badges: ['🏆 Champion', '⚡ Quick Learner'] },
@@ -149,11 +155,20 @@ app.post('/admin/seed', async (req, res) => {
       { name: 'Karthik M', class: '10A', roll_no: '105', points: 410, badges: ['🌟 Star Student'] }
     ]).select();
 
-    // Update parent child_id
-    if (studentsData && studentsData[0]) {
+    if (studentsErr) console.error('Students error:', studentsErr.message);
+
+    // Link parent to first student
+    if (studentsData?.[0] && userIds['parent']) {
       await supabase.from('profiles')
         .update({ child_id: studentsData[0].id })
         .eq('id', userIds['parent']);
+    }
+
+    // Link student profile to first student record
+    if (studentsData?.[0] && userIds['student']) {
+      await supabase.from('profiles')
+        .update({ child_id: studentsData[0].id })
+        .eq('id', userIds['student']);
     }
 
     // Create grades
@@ -165,6 +180,7 @@ app.post('/admin/seed', async (req, res) => {
       [65, 70, 72, 68, 75],
       [88, 85, 90, 82, 92]
     ];
+
     if (studentsData) {
       const gradesInsert = [];
       studentsData.forEach((s, si) => {
@@ -176,10 +192,11 @@ app.post('/admin/seed', async (req, res) => {
           });
         });
       });
-      await supabase.from('grades').upsert(gradesInsert);
+      const { error: gradesErr } = await supabase.from('grades').insert(gradesInsert);
+      if (gradesErr) console.error('Grades error:', gradesErr.message);
     }
 
-    // Create attendance (last 7 days)
+    // Create attendance
     if (studentsData) {
       const attendanceInsert = [];
       studentsData.forEach(s => {
@@ -193,61 +210,64 @@ app.post('/admin/seed', async (req, res) => {
           });
         }
       });
-      await supabase.from('attendance').upsert(attendanceInsert, { onConflict: 'student_id,date' });
+      const { error: attErr } = await supabase.from('attendance')
+        .upsert(attendanceInsert, { onConflict: 'student_id,date' });
+      if (attErr) console.error('Attendance error:', attErr.message);
     }
 
     // Create announcements
-    await supabase.from('announcements').upsert([
+    const { error: annErr } = await supabase.from('announcements').insert([
       { title: '📝 Unit Test Next Week', message: 'Unit test scheduled from Monday. Students must carry ID cards.', by_name: 'Mrs. Priya Sharma', important: true },
       { title: '🏖️ School Picnic', message: 'Annual school picnic on 25th June. Permission slips due Friday.', by_name: 'Mrs. Priya Sharma', important: false },
       { title: '📚 Library Books Due', message: 'All library books must be returned before end of term.', by_name: 'Mrs. Priya Sharma', important: false }
     ]);
+    if (annErr) console.error('Announcements error:', annErr.message);
 
     // Create homework
-    if (studentsData) {
-      const { data: hwData } = await supabase.from('homework').upsert([
-        { title: 'Math Chapter 5 Exercise', subject: 'Mathematics', description: 'Complete exercises 5.1 to 5.4', due_date: new Date(Date.now() + 86400000).toISOString(), points: 50 },
-        { title: 'Science Lab Report', subject: 'Science', description: 'Write lab report on photosynthesis experiment', due_date: new Date(Date.now() + 2*86400000).toISOString(), points: 75 },
-        { title: 'English Essay', subject: 'English', description: 'Write 500 word essay on climate change', due_date: new Date(Date.now() + 3*86400000).toISOString(), points: 60 }
-      ]).select();
+    const { data: hwData, error: hwErr } = await supabase.from('homework').insert([
+      { title: 'Math Chapter 5 Exercise', subject: 'Mathematics', description: 'Complete exercises 5.1 to 5.4', due_date: new Date(Date.now() + 86400000).toISOString(), points: 50 },
+      { title: 'Science Lab Report', subject: 'Science', description: 'Write lab report on photosynthesis experiment', due_date: new Date(Date.now() + 2*86400000).toISOString(), points: 75 },
+      { title: 'English Essay', subject: 'English', description: 'Write 500 word essay on climate change', due_date: new Date(Date.now() + 3*86400000).toISOString(), points: 60 }
+    ]).select();
+    if (hwErr) console.error('Homework error:', hwErr.message);
 
-      if (hwData && studentsData[0]) {
-        await supabase.from('homework_submissions').upsert([
-          { homework_id: hwData[0].id, student_id: studentsData[0].id },
-          { homework_id: hwData[1].id, student_id: studentsData[0].id },
-          { homework_id: hwData[1].id, student_id: studentsData[1].id }
-        ], { onConflict: 'homework_id,student_id' });
-      }
+    // Add submissions
+    if (hwData && studentsData) {
+      const { error: subErr } = await supabase.from('homework_submissions').insert([
+        { homework_id: hwData[0].id, student_id: studentsData[0].id },
+        { homework_id: hwData[1].id, student_id: studentsData[0].id },
+        { homework_id: hwData[1].id, student_id: studentsData[1].id }
+      ]);
+      if (subErr) console.error('Submissions error:', subErr.message);
     }
 
-    // Create wellness check-ins
+    // Create wellness
     if (studentsData) {
       const moods = [4, 3, 5, 2, 4, 3, 5];
-      const messages = [
-        'Feeling good today!', 'A bit stressed about exams', 'Had a great day!',
-        'Feeling overwhelmed', 'Pretty normal day', 'Tired but okay', 'Excited about picnic!'
-      ];
+      const msgs = ['Feeling good today!', 'A bit stressed about exams', 'Had a great day!', 'Feeling overwhelmed', 'Pretty normal day', 'Tired but okay', 'Excited about picnic!'];
       const wellnessInsert = moods.map((mood, i) => {
         const date = new Date();
         date.setDate(date.getDate() - i);
         return {
-          student_id: studentsData[0].id, mood, message: messages[i],
+          student_id: studentsData[0].id, mood,
+          message: msgs[i],
           sentiment: mood >= 4 ? 'positive' : mood === 3 ? 'neutral' : 'negative',
           created_at: date.toISOString()
         };
       });
-      await supabase.from('wellness').upsert(wellnessInsert);
+      const { error: wellErr } = await supabase.from('wellness').insert(wellnessInsert);
+      if (wellErr) console.error('Wellness error:', wellErr.message);
     }
 
-    // Create chat
+    // Create chat + messages
     if (userIds['teacher'] && userIds['parent'] && studentsData) {
-      const { data: chatData } = await supabase.from('chats').upsert({
+      const { data: chatData, error: chatErr } = await supabase.from('chats').insert({
         teacher_id: userIds['teacher'],
         parent_id: userIds['parent'],
         student_id: studentsData[0].id
-      }, { onConflict: 'teacher_id,parent_id' }).select().single();
+      }).select().single();
 
-      if (chatData) {
+      if (!chatErr && chatData) {
         await supabase.from('messages').insert([
           { chat_id: chatData.id, from_id: userIds['teacher'], from_name: 'Mrs. Priya', text: 'Hello! Rahul has been doing great in class recently.', created_at: new Date(Date.now() - 3600000).toISOString() },
           { chat_id: chatData.id, from_id: userIds['parent'], from_name: 'Mr. Arjun', text: 'Thank you! He has been studying hard at home too.', created_at: new Date(Date.now() - 1800000).toISOString() },
@@ -256,7 +276,7 @@ app.post('/admin/seed', async (req, res) => {
       }
     }
 
-    res.json({ success: true, message: '✅ Demo data seeded successfully!' });
+    res.json({ success: true, message: '✅ Demo data seeded successfully!', userIds });
   } catch (err) {
     console.error(err);
     res.json({ success: false, message: err.message });
