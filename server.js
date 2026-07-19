@@ -507,4 +507,17 @@ app.post('/api/chat/send', requireAuth(), async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
+// Debug route
+app.get('/debug/profile', async (req, res) => {
+  try {
+    const { data: authUsers } = await supabase.auth.admin.listUsers();
+    const { data: profiles } = await supabase.from('profiles').select('*');
+    res.json({
+      authUsers: authUsers?.users?.map(u => ({ id: u.id, email: u.email })),
+      profiles: profiles
+    });
+  } catch (err) {
+    res.json({ error: err.message });
+  }
+});
 app.listen(PORT, () => console.log(`✅ EduNexus running on port ${PORT}`));
