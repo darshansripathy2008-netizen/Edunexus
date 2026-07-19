@@ -4,7 +4,7 @@ const session = require('express-session');
 const { createClient } = require('@supabase/supabase-js');
 const bcrypt = require('bcryptjs');
 
-// Supabase init (service role for server-side)
+// Supabase init
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY
@@ -13,6 +13,12 @@ const supabase = createClient(
 const app = express();
 app.use(express.json());
 app.use(express.static('public'));
+
+// ✅ Root redirect
+app.get('/', (req, res) => {
+  res.redirect('/login.html');
+});
+
 app.use(session({
   secret: process.env.SESSION_SECRET,
   resave: false,
@@ -37,42 +43,13 @@ function requireAuth(role) {
 // AUTH ROUTES
 // =====================
 
-// Register (used for seeding)
-app.post('/auth/register', async (req, res) => {
-  try {
-    const { name, email, password, role, extra } = req.body;
-
-    // Create auth user in Supabase
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true
-    });
-    if (authError) return res.json({ success: false, message: authError.message });
-
-    // Create profile
-    const { error: profileError } = await supabase.from('profiles').insert({
-      id: authData.user.id,
-      name, role, ...extra
-    });
-    if (profileError) return res.json({ success: false, message: profileError.message });
-
-    res.json({ success: true, id: authData.user.id });
-  } catch (err) {
-    res.json({ success: false, message: err.message });
-  }
-});
-
 // Login
 app.post('/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-
-    // Sign in with Supabase Auth
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return res.json({ success: false, message: 'Invalid email or password.' });
 
-    // Get profile
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('*')
@@ -93,7 +70,8 @@ app.post('/auth/login', async (req, res) => {
 
     res.json({ success: true, role: profile.role, name: profile.name });
   } catch (err) {
-    res.json({ success: false, message: err.message });
+    console.error(err);
+    res.json({ success: false, message: 'Server error.' });
   }
 });
 
@@ -118,7 +96,6 @@ app.post('/admin/seed', async (req, res) => {
     if (password !== 'admin123')
       return res.json({ success: false, message: 'Wrong password.' });
 
-    // Create users
     const usersToCreate = [
       { name: 'Admin User', email: 'admin@edunexus.com', password: 'admin123', role: 'admin', extra: {} },
       { name: 'Mrs. Priya Sharma', email: 'priya@edunexus.com', password: 'teacher123', role: 'teacher', extra: { subject: 'Mathematics', class: '10A' } },
@@ -128,7 +105,6 @@ app.post('/admin/seed', async (req, res) => {
 
     const userIds = {};
     for (const u of usersToCreate) {
-      // Delete existing user if any
       const { data: existing } = await supabase.auth.admin.listUsers();
       const found = existing?.users?.find(eu => eu.email === u.email);
       if (found) await supabase.auth.admin.deleteUser(found.id);
@@ -136,7 +112,7 @@ app.post('/admin/seed', async (req, res) => {
       const { data: authData, error } = await supabase.auth.admin.createUser({
         email: u.email, password: u.password, email_confirm: true
       });
-      if (error) { console.error(u.email, error); continue; }
+      if (error) { console.error(u.email, error.message); continue; }
 
       await supabase.from('profiles').upsert({
         id: authData.user.id, name: u.name, role: u.role, ...u.extra
@@ -153,12 +129,11 @@ app.post('/admin/seed', async (req, res) => {
       { name: 'Karthik M', class: '10A', roll_no: '105', points: 410, badges: ['🌟 Star Student'] }
     ]).select();
 
-    // Update parent's child_id
+    // Update parent child_id
     if (studentsData && studentsData[0]) {
-      await supabase.from('profiles').update({ child_id: studentsData[0].id })
+      await supabase.from('profiles')
+        .update({ child_id: studentsData[0].id })
         .eq('id', userIds['parent']);
-      await supabase.from('profiles').update({ child_id: studentsData[0].id })
-        .eq('email', 'rahul@edunexus.com');
     }
 
     // Create grades
@@ -176,8 +151,7 @@ app.post('/admin/seed', async (req, res) => {
         subjects.forEach((sub, subI) => {
           const marks = gradeData[si][subI];
           gradesInsert.push({
-            student_id: s.id, subject: sub, marks,
-            total: 100,
+            student_id: s.id, subject: sub, marks, total: 100,
             grade: marks >= 90 ? 'A+' : marks >= 80 ? 'A' : marks >= 70 ? 'B' : 'C'
           });
         });
@@ -217,7 +191,6 @@ app.post('/admin/seed', async (req, res) => {
         { title: 'English Essay', subject: 'English', description: 'Write 500 word essay on climate change', due_date: new Date(Date.now() + 3*86400000).toISOString(), points: 60 }
       ]).select();
 
-      // Add some submissions
       if (hwData && studentsData[0]) {
         await supabase.from('homework_submissions').upsert([
           { homework_id: hwData[0].id, student_id: studentsData[0].id },
@@ -255,7 +228,7 @@ app.post('/admin/seed', async (req, res) => {
       }, { onConflict: 'teacher_id,parent_id' }).select().single();
 
       if (chatData) {
-        await supabase.from('messages').upsert([
+        await supabase.from('messages').insert([
           { chat_id: chatData.id, from_id: userIds['teacher'], from_name: 'Mrs. Priya', text: 'Hello! Rahul has been doing great in class recently.', created_at: new Date(Date.now() - 3600000).toISOString() },
           { chat_id: chatData.id, from_id: userIds['parent'], from_name: 'Mr. Arjun', text: 'Thank you! He has been studying hard at home too.', created_at: new Date(Date.now() - 1800000).toISOString() },
           { chat_id: chatData.id, from_id: userIds['teacher'], from_name: 'Mrs. Priya', text: 'Please make sure he submits the Math homework by tomorrow.', created_at: new Date(Date.now() - 900000).toISOString() }
@@ -292,7 +265,8 @@ app.get('/api/teacher/dashboard', requireAuth('teacher'), async (req, res) => {
       students: students.data || [],
       announcements: announcements.data || [],
       homework: homework.data || [],
-      avgMood, negativeMoods
+      avgMood,
+      negativeMoods
     });
   } catch (err) {
     res.json({ success: false, message: err.message });
@@ -301,9 +275,10 @@ app.get('/api/teacher/dashboard', requireAuth('teacher'), async (req, res) => {
 
 app.get('/api/teacher/students', requireAuth('teacher'), async (req, res) => {
   try {
-    const { data: students } = await supabase.from('students').select(`
-      *, grades(*), attendance(*)
-    `).eq('class', '10A');
+    const { data: students } = await supabase
+      .from('students')
+      .select('*, grades(*), attendance(*)')
+      .eq('class', '10A');
     res.json({ success: true, students: students || [] });
   } catch (err) {
     res.json({ success: false, message: err.message });
@@ -331,7 +306,8 @@ app.post('/api/announcements', requireAuth('teacher'), async (req, res) => {
     const { title, message, important } = req.body;
     const { error } = await supabase.from('announcements').insert({
       title, message, important: important || false,
-      by_id: req.session.user.id, by_name: req.session.user.name
+      by_id: req.session.user.id,
+      by_name: req.session.user.name
     });
     if (error) return res.json({ success: false, message: error.message });
     res.json({ success: true });
@@ -344,8 +320,10 @@ app.post('/api/homework', requireAuth('teacher'), async (req, res) => {
   try {
     const { title, subject, description, dueDate, points } = req.body;
     const { error } = await supabase.from('homework').insert({
-      title, subject, description, due_date: dueDate,
-      points: points || 50, by_id: req.session.user.id
+      title, subject, description,
+      due_date: dueDate,
+      points: points || 50,
+      by_id: req.session.user.id
     });
     if (error) return res.json({ success: false, message: error.message });
     res.json({ success: true });
@@ -410,7 +388,8 @@ app.get('/api/parent/dashboard', requireAuth('parent'), async (req, res) => {
       attendance: att,
       announcements: announcements.data || [],
       wellness: wellness.data || [],
-      attendancePct, avgGrade
+      attendancePct,
+      avgGrade
     });
   } catch (err) {
     res.json({ success: false, message: err.message });
@@ -458,8 +437,10 @@ app.post('/api/wellness', requireAuth('student'), async (req, res) => {
 
     const { error } = await supabase.from('wellness').insert({
       student_id: profile?.child_id || req.session.user.id,
-      mood: parseInt(mood), message: message || '',
-      sentiment, anonymous: true
+      mood: parseInt(mood),
+      message: message || '',
+      sentiment,
+      anonymous: true
     });
     if (error) return res.json({ success: false, message: error.message });
     res.json({ success: true });
@@ -480,9 +461,12 @@ app.post('/api/homework/submit', requireAuth('student'), async (req, res) => {
         { onConflict: 'homework_id,student_id' });
     if (error) return res.json({ success: false, message: error.message });
 
-    const { data: hw } = await supabase.from('homework').select('points').eq('id', homeworkId).single();
+    const { data: hw } = await supabase.from('homework')
+      .select('points').eq('id', homeworkId).single();
     const points = hw?.points || 50;
-    await supabase.from('students').update({ points: supabase.rpc('increment', { x: points }) })
+
+    await supabase.from('students')
+      .update({ points: (profile?.points || 0) + points })
       .eq('id', studentId);
 
     res.json({ success: true, pointsEarned: points });
@@ -497,7 +481,8 @@ app.post('/api/gatepass', requireAuth('student'), async (req, res) => {
     const { error } = await supabase.from('gatepasses').insert({
       student_id: req.session.user.id,
       student_name: req.session.user.name,
-      reason, exit_time: exitTime, status: 'pending'
+      reason, exit_time: exitTime,
+      status: 'pending'
     });
     if (error) return res.json({ success: false, message: error.message });
     res.json({ success: true });
@@ -514,14 +499,17 @@ app.get('/api/chat/get', requireAuth(), async (req, res) => {
     const user = req.session.user;
     let chat;
     if (user.role === 'teacher') {
-      const { data } = await supabase.from('chats').select('*, messages(*)').eq('teacher_id', user.id);
+      const { data } = await supabase.from('chats')
+        .select('*, messages(*)').eq('teacher_id', user.id);
       chat = data?.[0];
     } else if (user.role === 'parent') {
-      const { data } = await supabase.from('chats').select('*, messages(*)').eq('parent_id', user.id);
+      const { data } = await supabase.from('chats')
+        .select('*, messages(*)').eq('parent_id', user.id);
       chat = data?.[0];
     }
     if (!chat) return res.json({ success: true, messages: [], chatId: null });
-    const messages = (chat.messages || []).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    const messages = (chat.messages || []).sort((a, b) =>
+      new Date(a.created_at) - new Date(b.created_at));
     res.json({ success: true, messages, chatId: chat.id });
   } catch (err) {
     res.json({ success: false, message: err.message });
@@ -543,8 +531,10 @@ app.post('/api/chat/send', requireAuth(), async (req, res) => {
     }
 
     const { error } = await supabase.from('messages').insert({
-      chat_id: finalChatId, from_id: user.id,
-      from_name: user.name, text
+      chat_id: finalChatId,
+      from_id: user.id,
+      from_name: user.name,
+      text
     });
     if (error) return res.json({ success: false, message: error.message });
     res.json({ success: true });
