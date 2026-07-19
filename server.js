@@ -33,29 +33,18 @@ function requireAuth(role) {
   };
 }
 
-// =====================
-// AUTH ROUTES
-// =====================
 app.post('/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return res.json({ success: false, message: 'Invalid email or password.' });
-
     const uid = data.user.id;
-
     const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', uid)
-      .single();
-
+      .from('profiles').select('*').eq('id', uid).single();
     if (profileError || !profile) {
-      console.error('Profile lookup failed for uid:', uid, profileError?.message);
+      console.error('Profile lookup failed:', uid, profileError?.message);
       return res.json({ success: false, message: 'Profile not found. Contact admin.' });
     }
-
     req.session.user = {
       id: uid,
       name: profile.name,
@@ -64,7 +53,6 @@ app.post('/auth/login', async (req, res) => {
       class: profile.class || '',
       childId: profile.child_id || ''
     };
-
     res.json({ success: true, role: profile.role, name: profile.name });
   } catch (err) {
     console.error(err);
@@ -82,16 +70,25 @@ app.get('/auth/me', (req, res) => {
   res.json({ loggedIn: true, user: req.session.user });
 });
 
-// =====================
-// SEED ROUTE
-// =====================
+app.get('/debug/profile', async (req, res) => {
+  try {
+    const { data: authUsers } = await supabase.auth.admin.listUsers();
+    const { data: profiles } = await supabase.from('profiles').select('*');
+    res.json({
+      authUsers: authUsers?.users?.map(u => ({ id: u.id, email: u.email })),
+      profiles
+    });
+  } catch (err) {
+    res.json({ error: err.message });
+  }
+});
+
 app.post('/admin/seed', async (req, res) => {
   try {
     const { password } = req.body;
     if (password !== 'admin123')
       return res.json({ success: false, message: 'Wrong password.' });
 
-    // Get all auth users
     const { data: authUsers, error: listErr } = await supabase.auth.admin.listUsers();
     if (listErr) return res.json({ success: false, message: 'Cannot list users: ' + listErr.message });
 
@@ -105,27 +102,21 @@ app.post('/admin/seed', async (req, res) => {
       'rahul@edunexus.com': { name: 'Rahul Kumar', role: 'student', class: '10A', roll_no: '101', points: 450 }
     };
 
-    // Upsert profiles using auth user IDs
     for (const [email, profileData] of Object.entries(profileMap)) {
       const uid = userMap[email];
       if (!uid) { console.error('No auth user for', email); continue; }
-      const { error: pErr } = await supabase.from('profiles').upsert({
-        id: uid, email, ...profileData
-      });
+      const { error: pErr } = await supabase.from('profiles').upsert({ id: uid, email, ...profileData });
       if (pErr) console.error('Profile upsert error for', email, pErr.message);
     }
 
-    // Create students
-    const { data: studentsData, error: sErr } = await supabase.from('students').upsert([
+    const { data: studentsData } = await supabase.from('students').upsert([
       { name: 'Rahul Kumar', class: '10A', roll_no: '101', points: 450, badges: ['🌟 Star Student', '📚 Bookworm'] },
       { name: 'Priya Patel', class: '10A', roll_no: '102', points: 380, badges: ['🎯 On Target'] },
       { name: 'Arjun Singh', class: '10A', roll_no: '103', points: 520, badges: ['🏆 Champion', '⚡ Quick Learner'] },
       { name: 'Sneha Rao', class: '10A', roll_no: '104', points: 290, badges: ['💡 Creative'] },
       { name: 'Karthik M', class: '10A', roll_no: '105', points: 410, badges: ['🌟 Star Student'] }
     ], { onConflict: 'roll_no,class' }).select();
-    if (sErr) console.error('Students error:', sErr.message);
 
-    // Link parent and student profile to first student
     if (studentsData?.[0]) {
       const parentId = userMap['arjun@edunexus.com'];
       const studentId = userMap['rahul@edunexus.com'];
@@ -133,7 +124,6 @@ app.post('/admin/seed', async (req, res) => {
       if (studentId) await supabase.from('profiles').update({ child_id: studentsData[0].id }).eq('id', studentId);
     }
 
-    // Grades
     const subjects = ['Mathematics', 'Science', 'English', 'History', 'Computer Science'];
     const gradeData = [
       [85, 90, 78, 88, 95],
@@ -156,7 +146,6 @@ app.post('/admin/seed', async (req, res) => {
       await supabase.from('grades').upsert(gradesInsert);
     }
 
-    // Attendance
     if (studentsData) {
       const attendanceInsert = [];
       studentsData.forEach(s => {
@@ -173,18 +162,16 @@ app.post('/admin/seed', async (req, res) => {
       await supabase.from('attendance').upsert(attendanceInsert, { onConflict: 'student_id,date' });
     }
 
-    // Announcements
     await supabase.from('announcements').upsert([
       { title: '📝 Unit Test Next Week', message: 'Unit test scheduled from Monday. Students must carry ID cards.', by_name: 'Mrs. Priya Sharma', important: true },
       { title: '🏖️ School Picnic', message: 'Annual school picnic on 25th June. Permission slips due Friday.', by_name: 'Mrs. Priya Sharma', important: false },
       { title: '📚 Library Books Due', message: 'All library books must be returned before end of term.', by_name: 'Mrs. Priya Sharma', important: false }
     ]);
 
-    // Homework
     const { data: hwData } = await supabase.from('homework').upsert([
       { title: 'Math Chapter 5 Exercise', subject: 'Mathematics', description: 'Complete exercises 5.1 to 5.4', due_date: new Date(Date.now() + 86400000).toISOString(), points: 50 },
-      { title: 'Science Lab Report', subject: 'Science', description: 'Write lab report on photosynthesis', due_date: new Date(Date.now() + 2*86400000).toISOString(), points: 75 },
-      { title: 'English Essay', subject: 'English', description: 'Write 500 word essay on climate change', due_date: new Date(Date.now() + 3*86400000).toISOString(), points: 60 }
+      { title: 'Science Lab Report', subject: 'Science', description: 'Write lab report on photosynthesis', due_date: new Date(Date.now() + 2 * 86400000).toISOString(), points: 75 },
+      { title: 'English Essay', subject: 'English', description: 'Write 500 word essay on climate change', due_date: new Date(Date.now() + 3 * 86400000).toISOString(), points: 60 }
     ]).select();
 
     if (hwData && studentsData) {
@@ -195,7 +182,6 @@ app.post('/admin/seed', async (req, res) => {
       ], { onConflict: 'homework_id,student_id' });
     }
 
-    // Wellness
     if (studentsData) {
       const moods = [4, 3, 5, 2, 4, 3, 5];
       const msgs = ['Feeling good today!', 'A bit stressed about exams', 'Had a great day!', 'Feeling overwhelmed', 'Pretty normal day', 'Tired but okay', 'Excited about picnic!'];
@@ -212,7 +198,6 @@ app.post('/admin/seed', async (req, res) => {
       await supabase.from('wellness').upsert(wellnessInsert);
     }
 
-    // Chat
     const teacherId = userMap['priya@edunexus.com'];
     const parentId = userMap['arjun@edunexus.com'];
     if (teacherId && parentId && studentsData) {
@@ -231,21 +216,13 @@ app.post('/admin/seed', async (req, res) => {
       }
     }
 
-    res.json({
-      success: true,
-      message: '✅ All demo data seeded!',
-      usersFound: Object.keys(userMap),
-      userIds: userMap
-    });
+    res.json({ success: true, message: '✅ All demo data seeded!', usersFound: Object.keys(userMap), userIds: userMap });
   } catch (err) {
     console.error(err);
     res.json({ success: false, message: err.message });
   }
 });
 
-// =====================
-// TEACHER ROUTES
-// =====================
 app.get('/api/teacher/dashboard', requireAuth('teacher'), async (req, res) => {
   try {
     const [students, announcements, homework, wellness] = await Promise.all([
@@ -263,7 +240,8 @@ app.get('/api/teacher/dashboard', requireAuth('teacher'), async (req, res) => {
       students: students.data || [],
       announcements: announcements.data || [],
       homework: homework.data || [],
-      avgMood, negativeMoods
+      avgMood,
+      negativeMoods
     });
   } catch (err) {
     res.json({ success: false, message: err.message });
@@ -299,7 +277,8 @@ app.post('/api/announcements', requireAuth('teacher'), async (req, res) => {
     const { title, message, important } = req.body;
     await supabase.from('announcements').insert({
       title, message, important: important || false,
-      by_id: req.session.user.id, by_name: req.session.user.name
+      by_id: req.session.user.id,
+      by_name: req.session.user.name
     });
     res.json({ success: true });
   } catch (err) {
@@ -312,7 +291,8 @@ app.post('/api/homework', requireAuth('teacher'), async (req, res) => {
     const { title, subject, description, dueDate, points } = req.body;
     await supabase.from('homework').insert({
       title, subject, description,
-      due_date: dueDate, points: points || 50,
+      due_date: dueDate,
+      points: points || 50,
       by_id: req.session.user.id
     });
     res.json({ success: true });
@@ -343,9 +323,6 @@ app.post('/api/gatepass/update', requireAuth('teacher'), async (req, res) => {
   }
 });
 
-// =====================
-// PARENT ROUTES
-// =====================
 app.get('/api/parent/dashboard', requireAuth('parent'), async (req, res) => {
   try {
     const { data: profile } = await supabase.from('profiles')
@@ -367,19 +344,18 @@ app.get('/api/parent/dashboard', requireAuth('parent'), async (req, res) => {
     res.json({
       success: true,
       student: student.data,
-      grades: gr, attendance: att,
+      grades: gr,
+      attendance: att,
       announcements: announcements.data || [],
       wellness: wellness.data || [],
-      attendancePct, avgGrade
+      attendancePct,
+      avgGrade
     });
   } catch (err) {
     res.json({ success: false, message: err.message });
   }
 });
 
-// =====================
-// STUDENT ROUTES
-// =====================
 app.get('/api/student/dashboard', requireAuth('student'), async (req, res) => {
   try {
     const { data: profile } = await supabase.from('profiles')
@@ -393,7 +369,8 @@ app.get('/api/student/dashboard', requireAuth('student'), async (req, res) => {
       supabase.from('homework_submissions').select('homework_id').eq('student_id', childId)
     ]);
     res.json({
-      success: true, profile,
+      success: true,
+      profile,
       grades: grades.data || [],
       attendance: attendance.data || [],
       homework: homework.data || [],
@@ -413,8 +390,10 @@ app.post('/api/wellness', requireAuth('student'), async (req, res) => {
       .select('child_id').eq('id', req.session.user.id).single();
     await supabase.from('wellness').insert({
       student_id: profile?.child_id,
-      mood: parseInt(mood), message: message || '',
-      sentiment, anonymous: true
+      mood: parseInt(mood),
+      message: message || '',
+      sentiment,
+      anonymous: true
     });
     res.json({ success: true });
   } catch (err) {
@@ -451,7 +430,9 @@ app.post('/api/gatepass', requireAuth('student'), async (req, res) => {
     await supabase.from('gatepasses').insert({
       student_id: req.session.user.id,
       student_name: req.session.user.name,
-      reason, exit_time: exitTime, status: 'pending'
+      reason,
+      exit_time: exitTime,
+      status: 'pending'
     });
     res.json({ success: true });
   } catch (err) {
@@ -459,9 +440,6 @@ app.post('/api/gatepass', requireAuth('student'), async (req, res) => {
   }
 });
 
-// =====================
-// CHAT ROUTES
-// =====================
 app.get('/api/chat/get', requireAuth(), async (req, res) => {
   try {
     const user = req.session.user;
@@ -497,8 +475,10 @@ app.post('/api/chat/send', requireAuth(), async (req, res) => {
       finalChatId = newChat?.id;
     }
     await supabase.from('messages').insert({
-      chat_id: finalChatId, from_id: user.id,
-      from_name: user.name, text
+      chat_id: finalChatId,
+      from_id: user.id,
+      from_name: user.name,
+      text
     });
     res.json({ success: true });
   } catch (err) {
@@ -507,17 +487,4 @@ app.post('/api/chat/send', requireAuth(), async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-// Debug route
-app.get('/debug/profile', async (req, res) => {
-  try {
-    const { data: authUsers } = await supabase.auth.admin.listUsers();
-    const { data: profiles } = await supabase.from('profiles').select('*');
-    res.json({
-      authUsers: authUsers?.users?.map(u => ({ id: u.id, email: u.email })),
-      profiles: profiles
-    });
-  } catch (err) {
-    res.json({ error: err.message });
-  }
-});
 app.listen(PORT, () => console.log(`✅ EduNexus running on port ${PORT}`));
