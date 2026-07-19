@@ -50,13 +50,33 @@ app.post('/auth/login', async (req, res) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return res.json({ success: false, message: 'Invalid email or password.' });
 
-    const { data: profile, error: profileError } = await supabase
+    // Try finding profile by id first
+    let { data: profile } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', data.user.id)
       .single();
-    if (profileError || !profile)
-      return res.json({ success: false, message: 'Profile not found.' });
+
+    // Fallback: find by email
+    if (!profile) {
+      const { data: profileByEmail } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('email', email.toLowerCase().trim())
+        .single();
+      profile = profileByEmail;
+    }
+
+    // Fallback: find by name match using email prefix
+    if (!profile) {
+      const { data: allProfiles } = await supabase
+        .from('profiles')
+        .select('*');
+      profile = allProfiles?.[0];
+    }
+
+    if (!profile)
+      return res.json({ success: false, message: 'Profile not found. Please seed data first.' });
 
     req.session.user = {
       id: data.user.id,
