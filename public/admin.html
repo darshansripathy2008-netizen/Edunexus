@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin — EduNexus</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg: #0d0d1a; --surface: #13131f; --surface2: #1a1a2e; --surface3: #1f1f35;
+      --border: rgba(255,255,255,0.06); --border-hover: rgba(255,255,255,0.12);
+      --red: #ef4444; --red-dim: rgba(239,68,68,0.15);
+      --purple: #6c63ff; --purple-dim: rgba(108,99,255,0.15);
+      --green: #10b981; --green-dim: rgba(16,185,129,0.15);
+      --gold: #f0b429; --gold-dim: rgba(240,180,41,0.15);
+      --blue: #3b82f6; --blue-dim: rgba(59,130,246,0.15);
+      --cyan: #00d4ff; --cyan-dim: rgba(0,212,255,0.1);
+      --pink: #ff6584; --pink-dim: rgba(255,101,132,0.15);
+      --text: #f0f0ff; --text2: #8888aa; --text3: #444466;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; }
+    .sidebar { width: 240px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; position: fixed; height: 100vh; z-index: 100; }
+    .sidebar-logo { padding: 24px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+    .sidebar-logo-icon { width: 36px; height: 36px; background: linear-gradient(135deg, var(--red), var(--pink)); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1rem; }
+    .sidebar-logo-name { font-size: 1.1rem; font-weight: 800; background: linear-gradient(135deg, var(--red), var(--pink)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .sidebar-user { padding: 16px 20px; border-bottom: 1px solid var(--border); }
+    .sidebar-user-name { font-size: 0.85rem; font-weight: 700; }
+    .sidebar-user-role { font-size: 0.72rem; color: var(--red); font-weight: 600; margin-top: 2px; }
+    .sidebar-nav { flex: 1; padding: 12px 0; overflow-y: auto; }
+    .nav-section { padding: 8px 20px 4px; font-size: 0.62rem; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: 0.12em; }
+    .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 20px; cursor: pointer; transition: all 0.2s; font-size: 0.85rem; font-weight: 500; color: var(--text2); border-left: 3px solid transparent; }
+    .nav-item:hover { background: var(--surface2); color: var(--text); }
+    .nav-item.active { background: var(--red-dim); color: var(--red); border-left-color: var(--red); }
+    .nav-item-icon { font-size: 1rem; width: 20px; text-align: center; }
+    .sidebar-bottom { padding: 16px 20px; border-top: 1px solid var(--border); }
+    .logout-btn { width: 100%; padding: 10px; background: var(--red-dim); border: 1px solid rgba(239,68,68,0.2); border-radius: 10px; color: var(--red); font-family: 'Inter', sans-serif; font-size: 0.83rem; font-weight: 600; cursor: pointer; }
+    .logout-btn:hover { background: var(--red); color: #fff; }
+    .main { margin-left: 240px; flex: 1; padding: 28px; }
+    .page { display: none; }
+    .page.active { display: block; animation: fadeIn 0.3s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; } }
+    .page-title { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 4px; }
+    .page-sub { color: var(--text2); font-size: 0.85rem; margin-bottom: 24px; }
+    .stats-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; margin-bottom: 24px; }
+    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 20px; position: relative; overflow: hidden; transition: all 0.2s; }
+    .stat-card:hover { transform: translateY(-2px); border-color: var(--border-hover); }
+    .stat-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+    .stat-card.red::before { background: linear-gradient(90deg, var(--red), var(--pink)); }
+    .stat-card.purple::before { background: linear-gradient(90deg, var(--purple), #a78bfa); }
+    .stat-card.green::before { background: linear-gradient(90deg, var(--green), #34d399); }
+    .stat-card.gold::before { background: linear-gradient(90deg, var(--gold), #ffd166); }
+    .stat-icon { font-size: 1.5rem; margin-bottom: 12px; }
+    .stat-num { font-size: 2rem; font-weight: 800; }
+    .stat-label { font-size: 0.75rem; color: var(--text2); margin-top: 4px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 20px; margin-bottom: 16px; }
+    .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .card-title { font-size: 0.9rem; font-weight: 700; }
+    .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 100px; font-size: 0.7rem; font-weight: 700; }
+    .badge-green { background: var(--green-dim); color: var(--green); }
+    .badge-red { background: var(--red-dim); color: var(--red); }
+    .badge-gold { background: var(--gold-dim); color: var(--gold); }
+    .badge-purple { background: var(--purple-dim); color: var(--purple); }
+    .badge-blue { background: var(--blue-dim); color: var(--blue); }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; font-size: 0.68rem; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: 0.08em; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+    td { padding: 12px; font-size: 0.82rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,255,255,0.02); }
+    .progress-track { height: 6px; background: rgba(255,255,255,0.06); border-radius: 100px; overflow: hidden; }
+    .progress-fill { height: 100%; border-radius: 100px; }
+    .fill-red { background: linear-gradient(90deg, var(--red), var(--pink)); }
+    .fill-green { background: linear-gradient(90deg, var(--green), #34d399); }
+    .fill-purple { background: linear-gradient(90deg, var(--purple), var(--cyan)); }
+    .fill-gold { background: linear-gradient(90deg, var(--gold), #ffd166); }
+    .btn { padding: 10px 20px; border: none; border-radius: 10px; font-family: 'Inter', sans-serif; font-size: 0.85rem; font-weight: 700; cursor: pointer; transition: all 0.2s; }
+    .btn-primary { background: linear-gradient(135deg, var(--red), var(--pink)); color: #fff; }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(239,68,68,0.3); }
+    .btn-sm { padding: 6px 14px; font-size: 0.75rem; }
+    .btn-green { background: var(--green); color: #fff; }
+    .btn-full { width: 100%; padding: 12px; }
+    .form-input { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 11px 14px; color: var(--text); font-family: 'Inter', sans-serif; font-size: 0.88rem; outline: none; margin-bottom: 12px; }
+    .form-input:focus { border-color: var(--red); }
+    .form-select { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 11px 14px; color: var(--text); font-family: 'Inter', sans-serif; font-size: 0.88rem; outline: none; margin-bottom: 12px; }
+    .form-textarea { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 11px 14px; color: var(--text); font-family: 'Inter', sans-serif; font-size: 0.88rem; outline: none; resize: vertical; min-height: 80px; margin-bottom: 12px; }
+    .form-textarea:focus { border-color: var(--red); }
+    .msg { padding: 10px 14px; border-radius: 10px; font-size: 0.82rem; font-weight: 500; display: none; margin-top: 10px; }
+    .msg.show { display: block; }
+    .msg.success { background: var(--green-dim); color: var(--green); border: 1px solid rgba(16,185,129,0.2); }
+    .msg.error { background: var(--red-dim); color: var(--red); border: 1px solid rgba(239,68,68,0.2); }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(239,68,68,0.3); border-radius: 2px; }
+    @media (max-width:1024px) { .stats-grid { grid-template-columns: repeat(2,1fr); } .grid-2 { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<div class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-icon">⚙️</div>
+    <div class="sidebar-logo-name">EduNexus</div>
+  </div>
+  <div class="sidebar-user">
+    <div class="sidebar-user-name" id="sidebarName">Admin</div>
+    <div class="sidebar-user-role">⚙️ System Administrator</div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-section">Overview</div>
+    <div class="nav-item active" onclick="showPage('dashboard')"><span class="nav-item-icon">📊</span> Dashboard</div>
+    <div class="nav-section">Management</div>
+    <div class="nav-item" onclick="showPage('users')"><span class="nav-item-icon">👥</span> Users</div>
+    <div class="nav-item" onclick="showPage('students')"><span class="nav-item-icon">🎒</span> Students</div>
+    <div class="nav-item" onclick="showPage('wellness')"><span class="nav-item-icon">🧠</span> Wellness</div>
+    <div class="nav-section">System</div>
+    <div class="nav-item" onclick="showPage('notifications')"><span class="nav-item-icon">🔔</span> Notifications</div>
+    <div class="nav-item" onclick="showPage('reports')"><span class="nav-item-icon">📈</span> Reports</div>
+  </nav>
+  <div class="sidebar-bottom">
+    <button class="logout-btn" onclick="logout()">🚪 Sign Out</button>
+  </div>
+</div>
+
+<div class="main">
+  <!-- DASHBOARD -->
+  <div class="page active" id="page-dashboard">
+    <div class="page-title">Admin Dashboard 🛡️</div>
+    <div class="page-sub">System overview and health metrics</div>
+    <div class="stats-grid">
+      <div class="stat-card red"><div class="stat-icon">👥</div><div class="stat-num" id="statUsers">4</div><div class="stat-label">Total Users</div></div>
+      <div class="stat-card purple"><div class="stat-icon">🎒</div><div class="stat-num" id="statStudents">5</div><div class="stat-label">Students</div></div>
+      <div class="stat-card green"><div class="stat-icon">✅</div><div class="stat-num" id="statAttendance">88%</div><div class="stat-label">Avg Attendance</div></div>
+      <div class="stat-card gold"><div class="stat-icon">😊</div><div class="stat-num" id="statMood">3.8</div><div class="stat-label">Avg Mood Score</div></div>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header"><div class="card-title">📊 System Activity</div></div>
+        <canvas id="activityChart" height="200"></canvas>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">🧠 Wellness Overview</div></div>
+        <canvas id="wellnessChart" height="200"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">⚡ Recent Activity</div></div>
+      <table>
+        <thead><tr><th>Time</th><th>Event</th><th>User</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td style="color:var(--text3)">2 mins ago</td><td>Login</td><td>priya@edunexus.com</td><td><span class="badge badge-green">✅ Success</span></td></tr>
+          <tr><td style="color:var(--text3)">5 mins ago</td><td>Homework Submit</td><td>rahul@edunexus.com</td><td><span class="badge badge-green">✅ Done</span></td></tr>
+          <tr><td style="color:var(--text3)">12 mins ago</td><td>Wellness Check-in</td><td>Anonymous</td><td><span class="badge badge-purple">📝 Recorded</span></td></tr>
+          <tr><td style="color:var(--text3)">18 mins ago</td><td>Announcement Posted</td><td>priya@edunexus.com</td><td><span class="badge badge-blue">📢 Published</span></td></tr>
+          <tr><td style="color:var(--text3)">25 mins ago</td><td>Gate Pass Request</td><td>rahul@edunexus.com</td><td><span class="badge badge-gold">⏳ Pending</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- USERS -->
+  <div class="page" id="page-users">
+    <div class="page-title">👥 User Management</div>
+    <div class="page-sub">Manage all system users</div>
+    <div class="card">
+      <table>
+        <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td><div style="font-weight:600">Mrs. Priya Sharma</div></td><td style="color:var(--text2)">priya@edunexus.com</td><td><span class="badge badge-purple">👩‍🏫 Teacher</span></td><td><span class="badge badge-green">● Active</span></td></tr>
+          <tr><td><div style="font-weight:600">Mr. Arjun Kumar</div></td><td style="color:var(--text2)">arjun@edunexus.com</td><td><span class="badge badge-blue">👨‍👩‍👧 Parent</span></td><td><span class="badge badge-green">● Active</span></td></tr>
+          <tr><td><div style="font-weight:600">Rahul Kumar</div></td><td style="color:var(--text2)">rahul@edunexus.com</td><td><span class="badge badge-green">🎒 Student</span></td><td><span class="badge badge-green">● Active</span></td></tr>
+          <tr><td><div style="font-weight:600">Admin User</div></td><td style="color:var(--text2)">admin@edunexus.com</td><td><span class="badge badge-red">⚙️ Admin</span></td><td><span class="badge badge-green">● Active</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- STUDENTS -->
+  <div class="page" id="page-students">
+    <div class="page-title">🎒 Student Overview</div>
+    <div class="page-sub">All students performance at a glance</div>
+    <div class="card" id="adminStudentList">
+      <div style="color:var(--text3)">Loading...</div>
+    </div>
+  </div>
+
+  <!-- WELLNESS -->
+  <div class="page" id="page-wellness">
+    <div class="page-title">🧠 Wellness Monitor</div>
+    <div class="page-sub">Anonymous student wellness data</div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header"><div class="card-title">📊 Mood Distribution</div></div>
+        <canvas id="moodAdminChart" height="220"></canvas>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">⚠️ Alerts</div></div>
+        <div style="padding:14px;background:var(--red-dim);border-radius:12px;border:1px solid rgba(239,68,68,0.2);margin-bottom:12px">
+          <div style="font-size:0.85rem;font-weight:700;color:var(--red);margin-bottom:4px">⚠️ Low Mood Alert</div>
+          <div style="font-size:0.78rem;color:var(--text2)">1 student reported mood score ≤ 2 in last 24 hours. Anonymous check-in flagged for counselor review.</div>
+        </div>
+        <div style="padding:14px;background:var(--gold-dim);border-radius:12px;border:1px solid rgba(240,180,41,0.2)">
+          <div style="font-size:0.85rem;font-weight:700;color:var(--gold);margin-bottom:4px">📊 Weekly Summary</div>
+          <div style="font-size:0.78rem;color:var(--text2)">Average class mood: 3.8/5. Trend: Improving ↑</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- NOTIFICATIONS -->
+  <div class="page" id="page-notifications">
+    <div class="page-title">🔔 Send Notifications</div>
+    <div class="page-sub">Broadcast messages to all users</div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header"><div class="card-title">📤 Send Notification</div></div>
+        <label style="font-size:0.73rem;font-weight:600;color:var(--text2);display:block;margin-bottom:6px;text-transform:uppercase">Title</label>
+        <input class="form-input" id="notifTitle" placeholder="Notification title">
+        <label style="font-size:0.73rem;font-weight:600;color:var(--text2);display:block;margin-bottom:6px;text-transform:uppercase">Message</label>
+        <textarea class="form-textarea" id="notifMsg" placeholder="Notification message..."></textarea>
+        <label style="font-size:0.73rem;font-weight:600;color:var(--text2);display:block;margin-bottom:6px;text-transform:uppercase">Send To</label>
+        <select class="form-select" id="notifTarget">
+          <option value="all">Everyone</option>
+          <option value="teachers">Teachers Only</option>
+          <option value="parents">Parents Only</option>
+          <option value="students">Students Only</option>
+        </select>
+        <button class="btn btn-primary btn-full" onclick="sendNotification()">🔔 Send Notification</button>
+        <div class="msg" id="notifMsg2"></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">📋 Recent Notifications</div></div>
+        <div id="notifList">
+          <div style="padding:14px;background:var(--surface2);border-radius:12px;margin-bottom:8px;border-left:3px solid var(--purple)">
+            <div style="font-size:0.85rem;font-weight:700;margin-bottom:4px">📝 Unit Test Reminder</div>
+            <div style="font-size:0.75rem;color:var(--text2)">Sent to Everyone · 2 hours ago</div>
+          </div>
+          <div style="padding:14px;background:var(--surface2);border-radius:12px;margin-bottom:8px;border-left:3px solid var(--green)">
+            <div style="font-size:0.85rem;font-weight:700;margin-bottom:4px">🏖️ Holiday Announcement</div>
+            <div style="font-size:0.75rem;color:var(--text2)">Sent to Everyone · Yesterday</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- REPORTS -->
+  <div class="page" id="page-reports">
+    <div class="page-title">📈 Reports</div>
+    <div class="page-sub">System analytics and insights</div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header"><div class="card-title">📊 Grade Distribution</div></div>
+        <canvas id="gradeDistChart" height="220"></canvas>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">✅ Attendance Trend</div></div>
+        <canvas id="attTrendChart" height="220"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">🏆 Top Performers</div></div>
+      <table>
+        <thead><tr><th>Rank</th><th>Student</th><th>Points</th><th>Avg Grade</th><th>Attendance</th></tr></thead>
+        <tbody>
+          <tr><td><span class="badge badge-gold">🥇 1</span></td><td style="font-weight:600">Arjun Singh</td><td><span class="badge badge-purple">⚡ 520</span></td><td style="color:var(--green)">91%</td><td style="color:var(--green)">100%</td></tr>
+          <tr><td><span class="badge" style="background:rgba(148,163,184,0.15);color:#94a3b8">🥈 2</span></td><td style="font-weight:600">Rahul Kumar</td><td><span class="badge badge-purple">⚡ 450</span></td><td style="color:var(--green)">85%</td><td style="color:var(--green)">86%</td></tr>
+          <tr><td><span class="badge" style="background:rgba(180,130,90,0.15);color:#b4824a">🥉 3</span></td><td style="font-weight:600">Karthik M</td><td><span class="badge badge-purple">⚡ 410</span></td><td style="color:var(--green)">88%</td><td style="color:var(--green)">86%</td></tr>
+          <tr><td><span class="badge badge-blue">4</span></td><td style="font-weight:600">Priya Patel</td><td><span class="badge badge-purple">⚡ 380</span></td><td style="color:var(--gold)">75%</td><td style="color:var(--gold)">71%</td></tr>
+          <tr><td><span class="badge badge-blue">5</span></td><td style="font-weight:600">Sneha Rao</td><td><span class="badge badge-purple">⚡ 290</span></td><td style="color:var(--gold)">70%</td><td style="color:var(--gold)">71%</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  fetch('/auth/me').then(r => r.json()).then(data => {
+    if (!data.loggedIn || data.user.role !== 'admin') {
+      window.location.href = '/login.html';
+      return;
+    }
+    document.getElementById('sidebarName').textContent = data.user.name;
+    initCharts();
+  });
+
+  function showPage(name) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.getElementById('page-' + name).classList.add('active');
+    document.querySelectorAll('.nav-item').forEach(n => {
+      if (n.textContent.toLowerCase().includes(name === 'dashboard' ? 'dashboard' : name === 'users' ? 'user' : name === 'students' ? 'student' : name === 'wellness' ? 'wellness' : name === 'notifications' ? 'notif' : name === 'reports' ? 'report' : name)) n.classList.add('active');
+    });
+    if (name === 'students') loadAdminStudents();
+    if (name === 'wellness') initMoodChart();
+    if (name === 'reports') initReportCharts();
+  }
+
+  function initCharts() {
+    const actCtx = document.getElementById('activityChart').getContext('2d');
+    new Chart(actCtx, {
+      type: 'line',
+      data: {
+        labels: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
+        datasets: [
+          { label: 'Logins', data: [12,18,15,22,19,8,5], borderColor: '#6c63ff', backgroundColor: 'rgba(108,99,255,0.1)', borderWidth: 2, fill: true, tension: 0.4, pointRadius: 3 },
+          { label: 'Submissions', data: [8,12,10,15,14,4,2], borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.1)', borderWidth: 2, fill: true, tension: 0.4, pointRadius: 3 }
+        ]
+      },
+      options: { responsive: true, plugins: { legend: { labels: { color: '#8888aa', font: { size: 11 } } } }, scales: { x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#8888aa', font: { size: 11 } } }, y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#8888aa', font: { size: 11 } } } } }
+    });
+
+    const wellCtx = document.getElementById('wellnessChart').getContext('2d');
+    new Chart(wellCtx, {
+      type: 'bar',
+      data: {
+        labels: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
+        datasets: [{ label: 'Avg Mood', data: [4, 3, 5, 2, 4, 3, 5], backgroundColor: ['#10b981','#f0b429','#10b981','#ef4444','#10b981','#f0b429','#10b981'], borderRadius: 8, borderWidth: 0 }]
+      },
+      options: { responsive: true, plugins: { legend: { display: false } }, scales: { x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#8888aa', font: { size: 11 } } }, y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#8888aa', font: { size: 11 } }, min: 0, max: 5 } } }
+    });
+  }
+
+  async function loadAdminStudents() {
+    const res = await fetch('/api/teacher/students').then(r => r.json());
+    if (!res.success) return;
+    document.getElementById('adminStudentList').innerHTML = `
+      <table>
+        <thead><tr><th>#</th><th>Name</th><th>Roll</th><th>Points</th><th>Badges</th><th>Avg Grade</th></tr></thead>
+        <tbody>${res.students.map((s,i) => {
+          const avg = s.grades?.length ? Math.round(s.grades.reduce((sum,g)=>sum+g.marks,0)/s.grades.length) : 0;
+          return `<tr>
+            <td style="color:var(--text3);font-weight:700">${i+1}</td>
+            <td style="font-weight:600">${s.name}</td>
+            <td style="color:var(--text2)">${s.roll_no}</td>
+            <td><span class="badge badge-purple">⚡ ${s.points}</span></td>
+            <td>${(s.badges||[]).slice(0,2).join(' ')}</td>
+            <td style="color:${avg>=85?'var(--green)':avg>=70?'var(--gold)':'var(--red)'};font-weight:700">${avg}%</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>`;
+  }
+
+  function initMoodChart() {
+    const ctx = document.getElementById('moodAdminChart').getContext('2d');
+    new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: ['😢 Very Low','😟 Low','😐 Neutral','😊 Good','🤩 Great'],
+        datasets: [{ data: [1,2,3,8,6], backgroundColor: ['#ef4444','#f97316','#eab308','#10b981','#6c63ff'], borderWidth: 0 }]
+      },
+      options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { color: '#8888aa', font: { size: 11 }, padding: 12 } } } }
+    });
+  }
+
+  function initReportCharts() {
+    const grCtx = document.getElementById('gradeDistChart').getContext('2d');
+    new Chart(grCtx, {
+      type: 'pie',
+      data: {
+        labels: ['A+ (90+)','A (80-89)','B (70-79)','C (<70)'],
+        datasets: [{ data: [8,10,5,2], backgroundColor: ['#10b981','#3b82f6','#f0b429','#ef4444'], borderWidth: 0 }]
+      },
+      options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { color: '#8888aa', font: { size: 11 }, padding: 12 } } } }
+    });
+
+    const attCtx = document.getElementById('attTrendChart').getContext('2d');
+    new Chart(attCtx, {
+      type: 'line',
+      data: {
+        labels: ['Mon','Tue','Wed','Thu','Fri'],
+        datasets: [{ label: 'Attendance %', data: [92,88,95,85,90], borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.1)', borderWidth: 2, fill: true, tension: 0.4, pointBackgroundColor: '#10b981', pointRadius: 4 }]
+      },
+      options: { responsive: true, plugins: { legend: { display: false } }, scales: { x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#8888aa', font: { size: 11 } } }, y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#8888aa', font: { size: 11 } }, min: 0, max: 100 } } }
+    });
+  }
+
+  async function sendNotification() {
+    const title = document.getElementById('notifTitle').value;
+    const message = document.getElementById('notifMsg').value;
+    if (!title || !message) return;
+    const el = document.getElementById('notifMsg2');
+    el.textContent = '✅ Notification sent to all users!';
+    el.className = 'msg show success';
+    document.getElementById('notifTitle').value = '';
+    document.getElementById('notifMsg').value = '';
+    setTimeout(() => el.className = 'msg', 3000);
+  }
+
+  async function logout() {
+    await fetch('/auth/logout', { method: 'POST' });
+    window.location.href = '/login.html';
+  }
+</script>
+</body>
+</html>
