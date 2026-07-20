@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Parent Portal — EduNexus</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg: #0d0d1a; --surface: #13131f; --surface2: #1a1a2e; --surface3: #1f1f35;
+      --border: rgba(255,255,255,0.06); --border-hover: rgba(255,255,255,0.12);
+      --blue: #3b82f6; --blue-dim: rgba(59,130,246,0.15); --blue-glow: rgba(59,130,246,0.3);
+      --cyan: #00d4ff; --cyan-dim: rgba(0,212,255,0.1);
+      --pink: #ff6584; --pink-dim: rgba(255,101,132,0.15);
+      --green: #10b981; --green-dim: rgba(16,185,129,0.15);
+      --gold: #f0b429; --gold-dim: rgba(240,180,41,0.15);
+      --red: #ef4444; --red-dim: rgba(239,68,68,0.15);
+      --purple: #6c63ff; --purple-dim: rgba(108,99,255,0.15);
+      --text: #f0f0ff; --text2: #8888aa; --text3: #444466;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; }
+    .sidebar { width: 240px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; position: fixed; height: 100vh; z-index: 100; }
+    .sidebar-logo { padding: 24px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+    .sidebar-logo-icon { width: 36px; height: 36px; background: linear-gradient(135deg, var(--blue), var(--cyan)); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1rem; }
+    .sidebar-logo-name { font-size: 1.1rem; font-weight: 800; background: linear-gradient(135deg, var(--blue), var(--cyan)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .sidebar-user { padding: 16px 20px; border-bottom: 1px solid var(--border); }
+    .sidebar-user-name { font-size: 0.85rem; font-weight: 700; }
+    .sidebar-user-role { font-size: 0.72rem; color: var(--blue); font-weight: 600; margin-top: 2px; }
+    .sidebar-nav { flex: 1; padding: 12px 0; overflow-y: auto; }
+    .nav-section { padding: 8px 20px 4px; font-size: 0.62rem; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: 0.12em; }
+    .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 20px; cursor: pointer; transition: all 0.2s; font-size: 0.85rem; font-weight: 500; color: var(--text2); border-left: 3px solid transparent; }
+    .nav-item:hover { background: var(--surface2); color: var(--text); }
+    .nav-item.active { background: var(--blue-dim); color: var(--blue); border-left-color: var(--blue); }
+    .nav-item-icon { font-size: 1rem; width: 20px; text-align: center; }
+    .sidebar-bottom { padding: 16px 20px; border-top: 1px solid var(--border); }
+    .logout-btn { width: 100%; padding: 10px; background: var(--red-dim); border: 1px solid rgba(239,68,68,0.2); border-radius: 10px; color: var(--red); font-family: 'Inter', sans-serif; font-size: 0.83rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+    .logout-btn:hover { background: var(--red); color: #fff; }
+    .main { margin-left: 240px; flex: 1; padding: 28px; min-height: 100vh; }
+    .page { display: none; }
+    .page.active { display: block; animation: fadeIn 0.3s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .page-header { margin-bottom: 24px; }
+    .page-title { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; }
+    .page-sub { color: var(--text2); font-size: 0.85rem; margin-top: 4px; }
+    .stats-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; margin-bottom: 24px; }
+    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 20px; position: relative; overflow: hidden; transition: all 0.2s; }
+    .stat-card:hover { border-color: var(--border-hover); transform: translateY(-2px); }
+    .stat-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+    .stat-card.blue::before { background: linear-gradient(90deg, var(--blue), var(--cyan)); }
+    .stat-card.green::before { background: linear-gradient(90deg, var(--green), #34d399); }
+    .stat-card.gold::before { background: linear-gradient(90deg, var(--gold), #ffd166); }
+    .stat-card.purple::before { background: linear-gradient(90deg, var(--purple), #a78bfa); }
+    .stat-icon { font-size: 1.5rem; margin-bottom: 12px; }
+    .stat-num { font-size: 2rem; font-weight: 800; letter-spacing: -0.03em; }
+    .stat-label { font-size: 0.75rem; color: var(--text2); margin-top: 4px; font-weight: 500; }
+    .stat-change { font-size: 0.72rem; margin-top: 6px; font-weight: 600; }
+    .stat-change.up { color: var(--green); }
+    .stat-change.down { color: var(--red); }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 20px; margin-bottom: 16px; }
+    .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .card-title { font-size: 0.9rem; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+    .card-action { font-size: 0.75rem; color: var(--blue); cursor: pointer; font-weight: 600; background: var(--blue-dim); padding: 5px 12px; border-radius: 100px; border: 1px solid rgba(59,130,246,0.2); }
+    .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 100px; font-size: 0.7rem; font-weight: 700; }
+    .badge-green { background: var(--green-dim); color: var(--green); }
+    .badge-red { background: var(--red-dim); color: var(--red); }
+    .badge-gold { background: var(--gold-dim); color: var(--gold); }
+    .badge-blue { background: var(--blue-dim); color: var(--blue); }
+    .badge-purple { background: var(--purple-dim); color: var(--purple); }
+    .progress-track { height: 8px; background: rgba(255,255,255,0.06); border-radius: 100px; overflow: hidden; margin-top: 6px; }
+    .progress-fill { height: 100%; border-radius: 100px; transition: width 1s ease; }
+    .fill-blue { background: linear-gradient(90deg, var(--blue), var(--cyan)); }
+    .fill-green { background: linear-gradient(90deg, var(--green), #34d399); }
+    .fill-gold { background: linear-gradient(90deg, var(--gold), #ffd166); }
+    .fill-red { background: linear-gradient(90deg, var(--red), #f87171); }
+    .att-day { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 0.82rem; }
+    .att-day:last-child { border-bottom: none; }
+    .ann-item { padding: 14px; background: var(--surface2); border-radius: 12px; margin-bottom: 8px; border-left: 3px solid var(--blue); }
+    .ann-item.important { border-left-color: var(--pink); }
+    .ann-title { font-size: 0.85rem; font-weight: 700; margin-bottom: 4px; }
+    .ann-msg { font-size: 0.78rem; color: var(--text2); line-height: 1.5; }
+    .ann-meta { font-size: 0.7rem; color: var(--text3); margin-top: 6px; }
+    .subject-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .subject-row:last-child { border-bottom: none; }
+    .chat-wrap { height: 300px; overflow-y: auto; padding: 12px; background: var(--surface2); border-radius: 12px; margin-bottom: 12px; }
+    .chat-msg { margin-bottom: 12px; }
+    .chat-msg.mine { text-align: right; }
+    .chat-bubble { display: inline-block; max-width: 75%; padding: 10px 14px; border-radius: 14px; font-size: 0.82rem; line-height: 1.5; }
+    .chat-msg:not(.mine) .chat-bubble { background: var(--surface3); border-radius: 4px 14px 14px 14px; }
+    .chat-msg.mine .chat-bubble { background: var(--blue-dim); border: 1px solid rgba(59,130,246,0.3); border-radius: 14px 4px 14px 14px; }
+    .chat-name { font-size: 0.68rem; color: var(--text3); margin-bottom: 3px; }
+    .chat-time { font-size: 0.65rem; color: var(--text3); margin-top: 3px; }
+    .chat-input-wrap { display: flex; gap: 8px; }
+    .chat-input { flex: 1; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; color: var(--text); font-family: 'Inter', sans-serif; font-size: 0.85rem; outline: none; }
+    .chat-input:focus { border-color: var(--blue); }
+    .btn { padding: 10px 20px; border: none; border-radius: 10px; font-family: 'Inter', sans-serif; font-size: 0.85rem; font-weight: 700; cursor: pointer; transition: all 0.2s; }
+    .btn-primary { background: linear-gradient(135deg, var(--blue), #2563eb); color: #fff; }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px var(--blue-glow); }
+    .btn-full { width: 100%; padding: 12px; }
+    .form-group { margin-bottom: 14px; }
+    .form-label { font-size: 0.73rem; font-weight: 600; color: var(--text2); margin-bottom: 7px; display: block; text-transform: uppercase; letter-spacing: 0.06em; }
+    .form-input { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 11px 14px; color: var(--text); font-family: 'Inter', sans-serif; font-size: 0.88rem; outline: none; transition: border-color 0.2s; }
+    .form-input:focus { border-color: var(--blue); }
+    .child-card { background: linear-gradient(135deg, var(--blue-dim), var(--cyan-dim)); border: 1px solid rgba(59,130,246,0.25); border-radius: 20px; padding: 24px; margin-bottom: 24px; display: flex; align-items: center; gap: 20px; }
+    .child-avatar { width: 64px; height: 64px; border-radius: 16px; background: linear-gradient(135deg, var(--blue), var(--cyan)); display: flex; align-items: center; justify-content: center; font-size: 1.6rem; font-weight: 800; color: #fff; flex-shrink: 0; }
+    .child-info { flex: 1; }
+    .child-name { font-size: 1.2rem; font-weight: 800; margin-bottom: 4px; }
+    .child-meta { font-size: 0.82rem; color: var(--text2); }
+    .child-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+    .wellness-dot { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1rem; }
+    .bus-card { background: linear-gradient(135deg, rgba(16,185,129,0.1), rgba(0,212,255,0.05)); border: 1px solid rgba(16,185,129,0.2); border-radius: 16px; padding: 20px; }
+    .bus-route { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+    .bus-stop { flex: 1; text-align: center; }
+    .bus-stop-name { font-size: 0.78rem; font-weight: 700; }
+    .bus-stop-time { font-size: 0.7rem; color: var(--text3); margin-top: 2px; }
+    .bus-line { flex: 1; height: 2px; background: linear-gradient(90deg, var(--green), var(--cyan)); position: relative; }
+    .bus-icon { position: absolute; top: -10px; font-size: 1.2rem; animation: busMove 3s ease-in-out infinite; }
+    @keyframes busMove { 0%,100% { left: 20%; } 50% { left: 60%; } }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(59,130,246,0.3); border-radius: 2px; }
+    .msg { padding: 10px 14px; border-radius: 10px; font-size: 0.82rem; font-weight: 500; display: none; margin-top: 10px; }
+    .msg.show { display: block; }
+    .msg.success { background: var(--green-dim); color: var(--green); border: 1px solid rgba(16,185,129,0.2); }
+    .msg.error { background: var(--red-dim); color: var(--red); border: 1px solid rgba(239,68,68,0.2); }
+    @media (max-width:1024px) { .stats-grid { grid-template-columns: repeat(2,1fr); } .grid-2 { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-icon">🎓</div>
+    <div class="sidebar-logo-name">EduNexus</div>
+  </div>
+  <div class="sidebar-user">
+    <div class="sidebar-user-name" id="sidebarName">Loading...</div>
+    <div class="sidebar-user-role">👨‍👩‍👧 Parent Portal</div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-section">Overview</div>
+    <div class="nav-item active" onclick="showPage('dashboard')"><span class="nav-item-icon">🏠</span> Dashboard</div>
+    <div class="nav-section">My Child</div>
+    <div class="nav-item" onclick="showPage('progress')"><span class="nav-item-icon">📈</span> Academic Progress</div>
+    <div class="nav-item" onclick="showPage('attendance')"><span class="nav-item-icon">✅</span> Attendance</div>
+    <div class="nav-item" onclick="showPage('wellness')"><span class="nav-item-icon">🧠</span> Wellness</div>
+    <div class="nav-section">School</div>
+    <div class="nav-item" onclick="showPage('announcements')"><span class="nav-item-icon">📢</span> Announcements</div>
+    <div class="nav-item" onclick="showPage('chat')"><span class="nav-item-icon">💬</span> Message Teacher</div>
+    <div class="nav-item" onclick="showPage('bus')"><span class="nav-item-icon">🚌</span> Bus Tracking</div>
+  </nav>
+  <div class="sidebar-bottom">
+    <button class="logout-btn" onclick="logout()">🚪 Sign Out</button>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- DASHBOARD -->
+  <div class="page active" id="page-dashboard">
+    <div class="page-header">
+      <div class="page-title">Welcome Back! 👋</div>
+      <div class="page-sub">Here's how your child is doing today</div>
+    </div>
+
+    <div class="child-card">
+      <div class="child-avatar" id="childAvatar">RK</div>
+      <div class="child-info">
+        <div class="child-name" id="childName">Loading...</div>
+        <div class="child-meta" id="childMeta">Class 10A · Roll No. 101</div>
+        <div class="child-badges" id="childBadges"></div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:2rem;font-weight:800;color:var(--gold)" id="childPoints">—</div>
+        <div style="font-size:0.72rem;color:var(--text2)">⚡ Total Points</div>
+      </div>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-card blue">
+        <div class="stat-icon">📊</div>
+        <div class="stat-num" id="statAvgGrade">—</div>
+        <div class="stat-label">Average Grade</div>
+        <div class="stat-change up" id="statGradeLabel">out of 100</div>
+      </div>
+      <div class="stat-card green">
+        <div class="stat-icon">✅</div>
+        <div class="stat-num" id="statAttendance">—</div>
+        <div class="stat-label">Attendance Rate</div>
+        <div class="stat-change up">Last 14 days</div>
+      </div>
+      <div class="stat-card gold">
+        <div class="stat-icon">⚡</div>
+        <div class="stat-num" id="statPoints">—</div>
+        <div class="stat-label">Points Earned</div>
+        <div class="stat-change up">Gamified rewards</div>
+      </div>
+      <div class="stat-card purple">
+        <div class="stat-icon">😊</div>
+        <div class="stat-num" id="statMood">—</div>
+        <div class="stat-label">Latest Mood</div>
+        <div class="stat-change" id="statMoodLabel">wellness check</div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">📚 Subject Performance</div>
+          <span class="card-action" onclick="showPage('progress')">Full Report</span>
+        </div>
+        <canvas id="subjectChart" height="200"></canvas>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">📅 Recent Attendance</div>
+          <span class="card-action" onclick="showPage('attendance')">View All</span>
+        </div>
+        <div id="dashAttendance"></div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">📢 Latest Announcements</div>
+          <span class="card-action" onclick="showPage('announcements')">View All</span>
+        </div>
+        <div id="dashAnnouncements"></div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">🧠 Wellness Check</div>
+          <span class="card-action" onclick="showPage('wellness')">Details</span>
+        </div>
+        <div id="dashWellness"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PROGRESS -->
+  <div class="page" id="page-progress">
+    <div class="page-header">
+      <div class="page-title">📈 Academic Progress</div>
+      <div class="page-sub">Detailed subject-wise performance report</div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📊 Performance Chart</div>
+      </div>
+      <canvas id="progressChart" height="120"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📚 Subject Breakdown</div>
+      </div>
+      <div id="subjectList"></div>
+    </div>
+  </div>
+
+  <!-- ATTENDANCE -->
+  <div class="page" id="page-attendance">
+    <div class="page-header">
+      <div class="page-title">✅ Attendance Record</div>
+      <div class="page-sub">Last 14 days attendance history</div>
+    </div>
+    <div class="stats-grid" style="grid-template-columns:repeat(3,1fr)">
+      <div class="stat-card green">
+        <div class="stat-icon">✅</div>
+        <div class="stat-num" id="attPresent">—</div>
+        <div class="stat-label">Days Present</div>
+      </div>
+      <div class="stat-card" style="border-top:3px solid var(--red)">
+        <div class="stat-icon">❌</div>
+        <div class="stat-num" id="attAbsent" style="color:var(--red)">—</div>
+        <div class="stat-label">Days Absent</div>
+      </div>
+      <div class="stat-card blue">
+        <div class="stat-icon">📊</div>
+        <div class="stat-num" id="attPct">—</div>
+        <div class="stat-label">Attendance Rate</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📅 Daily Record</div>
+      </div>
+      <div id="attendanceRecord"></div>
+    </div>
+  </div>
+
+  <!-- WELLNESS -->
+  <div class="page" id="page-wellness">
+    <div class="page-header">
+      <div class="page-title">🧠 Wellness Report</div>
+      <div class="page-sub">Your child's mental wellness check-ins (anonymous)</div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📊 Mood Trend</div>
+      </div>
+      <canvas id="wellnessChart" height="120"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📝 Recent Check-ins</div>
+      </div>
+      <div id="wellnessList"></div>
+    </div>
+  </div>
+
+  <!-- ANNOUNCEMENTS -->
+  <div class="page" id="page-announcements">
+    <div class="page-header">
+      <div class="page-title">📢 Announcements</div>
+      <div class="page-sub">Updates from school and teachers</div>
+    </div>
+    <div class="card">
+      <div id="annList"></div>
+    </div>
+  </div>
+
+  <!-- CHAT -->
+  <div class="page" id="page-chat">
+    <div class="page-header">
+      <div class="page-title">💬 Message Teacher</div>
+      <div class="page-sub">Direct chat with Mrs. Priya Sharma</div>
+    </div>
+    <div class="card" style="max-width:600px">
+      <div class="card-header">
+        <div class="card-title">👩‍🏫 Mrs. Priya Sharma</div>
+        <span class="badge badge-green">● Online</span>
+      </div>
+      <div class="chat-wrap" id="chatMessages">
+        <div style="text-align:center;color:var(--text3);font-size:0.8rem;padding:20px">Loading...</div>
+      </div>
+      <div class="chat-input-wrap">
+        <input class="chat-input" id="chatInput" placeholder="Type a message..." onkeydown="if(event.key==='Enter') sendMessage()">
+        <button class="btn btn-primary" onclick="sendMessage()">Send →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- BUS TRACKING -->
+  <div class="page" id="page-bus">
+    <div class="page-header">
+      <div class="page-title">🚌 Bus Tracking</div>
+      <div class="page-sub">Real-time school bus location</div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🚌 Bus Route 5 — Live Tracking</div>
+        <span class="badge badge-green">● Live</span>
+      </div>
+      <div class="bus-card">
+        <div style="display:flex;justify-content:space-between;margin-bottom:12px">
+          <div>
+            <div style="font-size:0.72rem;color:var(--text3);margin-bottom:4px">BUS NUMBER</div>
+            <div style="font-size:1rem;font-weight:700">TN-01-AB-1234</div>
+          </div>
+          <div>
+            <div style="font-size:0.72rem;color:var(--text3);margin-bottom:4px">DRIVER</div>
+            <div style="font-size:1rem;font-weight:700">Mr. Rajan</div>
+          </div>
+          <div>
+            <div style="font-size:0.72rem;color:var(--text3);margin-bottom:4px">ETA</div>
+            <div style="font-size:1rem;font-weight:700;color:var(--green)" id="busEta">12 mins</div>
+          </div>
+          <div>
+            <div style="font-size:0.72rem;color:var(--text3);margin-bottom:4px">SPEED</div>
+            <div style="font-size:1rem;font-weight:700" id="busSpeed">35 km/h</div>
+          </div>
+        </div>
+        <div class="bus-route">
+          <div class="bus-stop">
+            <div style="width:12px;height:12px;border-radius:50%;background:var(--green);margin:0 auto 4px"></div>
+            <div class="bus-stop-name">School</div>
+            <div class="bus-stop-time">3:30 PM</div>
+          </div>
+          <div class="bus-line">
+            <div class="bus-icon">🚌</div>
+          </div>
+          <div class="bus-stop">
+            <div style="width:12px;height:12px;border-radius:50%;background:var(--gold);margin:0 auto 4px"></div>
+            <div class="bus-stop-name">Stop 2</div>
+            <div class="bus-stop-time">3:45 PM</div>
+          </div>
+          <div class="bus-line"></div>
+          <div class="bus-stop">
+            <div style="width:12px;height:12px;border-radius:50%;background:var(--blue);margin:0 auto 4px"></div>
+            <div class="bus-stop-name">Your Stop</div>
+            <div class="bus-stop-time" style="color:var(--green);font-weight:700" id="yourStopTime">~3:52 PM</div>
+          </div>
+          <div class="bus-line"></div>
+          <div class="bus-stop">
+            <div style="width:12px;height:12px;border-radius:50%;background:var(--text3);margin:0 auto 4px"></div>
+            <div class="bus-stop-name">End</div>
+            <div class="bus-stop-time">4:15 PM</div>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:16px;padding:14px;background:var(--green-dim);border-radius:12px;border:1px solid rgba(16,185,129,0.2);display:flex;align-items:center;gap:12px" id="busAlert">
+        <span style="font-size:1.5rem">🔔</span>
+        <div>
+          <div style="font-size:0.85rem;font-weight:700;color:var(--green)">Bus is on the way!</div>
+          <div style="font-size:0.78rem;color:var(--text2)">Your child's bus will arrive in approximately <strong id="busMinutes">12 minutes</strong>. Be ready at the stop.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📍 Bus Stops Today</div>
+      </div>
+      <div id="busStops">
+        ${['School (3:30 PM)','Stop 1 - Anna Nagar (3:38 PM)','Stop 2 - T Nagar (3:45 PM)','Stop 3 - Your Stop (3:52 PM)','Stop 4 - Adyar (4:00 PM)','Stop 5 - End (4:15 PM)'].map((stop,i) => `
+          <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)">
+            <div style="width:28px;height:28px;border-radius:50%;background:${i<=2?'var(--green-dim)':'var(--surface2)'};border:2px solid ${i<=2?'var(--green)':'var(--border)'};display:flex;align-items:center;justify-content:center;font-size:0.7rem;font-weight:700;color:${i<=2?'var(--green)':'var(--text3)'}">${i+1}</div>
+            <div style="font-size:0.85rem;${i===3?'font-weight:700;color:var(--blue)':''}">${stop}</div>
+            ${i<=2?'<span class="badge badge-green" style="margin-left:auto">✅ Passed</span>':''}
+            ${i===3?'<span class="badge badge-blue" style="margin-left:auto">⏳ Next</span>':''}
+          </div>`).join('')}
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  let dashData = null;
+  let chatId = null;
+  let subjectChart = null;
+  let progressChart = null;
+  let wellnessChart = null;
+
+  fetch('/auth/me').then(r => r.json()).then(data => {
+    if (!data.loggedIn || data.user.role !== 'parent') {
+      window.location.href = '/login.html';
+      return;
+    }
+    document.getElementById('sidebarName').textContent = data.user.name;
+    loadDashboard();
+  });
+
+  function showPage(name) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.getElementById('page-' + name).classList.add('active');
+    document.querySelectorAll('.nav-item').forEach(n => {
+      if (n.textContent.toLowerCase().includes(
+        name === 'dashboard' ? 'dashboard' :
+        name === 'progress' ? 'academic' :
+        name === 'attendance' ? 'attend' :
+        name === 'wellness' ? 'wellness' :
+        name === 'announcements' ? 'announce' :
+        name === 'chat' ? 'message' :
+        name === 'bus' ? 'bus' : name)) n.classList.add('active');
+    });
+    if (name === 'progress') loadProgress();
+    if (name === 'attendance') loadAttendance();
+    if (name === 'wellness') loadWellness();
+    if (name === 'announcements') loadAnnouncements();
+    if (name === 'chat') loadChat();
+  }
+
+  async function loadDashboard() {
+    const res = await fetch('/api/parent/dashboard').then(r => r.json());
+    if (!res.success) return;
+    dashData = res;
+
+    const student = res.student || {};
+    const initials = (student.name || 'RK').split(' ').map(w=>w[0]).join('').slice(0,2);
+    document.getElementById('childAvatar').textContent = initials;
+    document.getElementById('childName').textContent = student.name || 'Rahul Kumar';
+    document.getElementById('childMeta').textContent = `Class ${student.class || '10A'} · Roll No. ${student.roll_no || '101'}`;
+    document.getElementById('childPoints').textContent = student.points || 450;
+    document.getElementById('statPoints').textContent = student.points || 450;
+    document.getElementById('childBadges').innerHTML = (student.badges || []).map(b =>
+      `<span class="badge badge-blue">${b}</span>`).join('');
+
+    document.getElementById('statAvgGrade').textContent = res.avgGrade + '%';
+    document.getElementById('statGradeLabel').textContent = res.avgGrade >= 85 ? '🌟 Excellent' : res.avgGrade >= 70 ? '👍 Good' : '⚠️ Needs Work';
+    document.getElementById('statAttendance').textContent = res.attendancePct + '%';
+
+    const latestMood = res.wellness?.[0]?.mood || 4;
+    const moodEmoji = ['😢','😟','😐','😊','🤩'][latestMood-1];
+    document.getElementById('statMood').textContent = moodEmoji;
+    document.getElementById('statMoodLabel').textContent = latestMood >= 4 ? 'Feeling good!' : latestMood >= 3 ? 'Doing okay' : 'Needs attention';
+
+    // Subject chart
+    const subjects = res.grades.map(g => g.subject.slice(0,3));
+    const marks = res.grades.map(g => g.marks);
+    const colors = marks.map(m => m >= 85 ? '#10b981' : m >= 70 ? '#f0b429' : '#ef4444');
+    const subCtx = document.getElementById('subjectChart').getContext('2d');
+    if (subjectChart) subjectChart.destroy();
+    subjectChart = new Chart(subCtx, {
+      type: 'radar',
+      data: {
+        labels: subjects,
+        datasets: [{
+          label: 'Marks',
+          data: marks,
+          borderColor: '#3b82f6',
+          backgroundColor: 'rgba(59,130,246,0.15)',
+          pointBackgroundColor: '#3b82f6',
+          borderWidth: 2,
+          pointRadius: 4
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: { r: { min: 0, max: 100, ticks: { color: '#444466', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.05)' }, pointLabels: { color: '#8888aa', font: { size: 11 } } } }
+      }
+    });
+
+    // Attendance
+    const attEl = document.getElementById('dashAttendance');
+    attEl.innerHTML = res.attendance.slice(0,7).map(a => `
+      <div class="att-day">
+        <span style="font-size:0.82rem">${new Date(a.date+'T00:00:00').toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'})}</span>
+        <span class="badge ${a.status==='present'?'badge-green':'badge-red'}">${a.status==='present'?'✅ Present':'❌ Absent'}</span>
+      </div>`).join('');
+
+    // Announcements
+    document.getElementById('dashAnnouncements').innerHTML = res.announcements.slice(0,3).map(a => `
+      <div class="ann-item ${a.important?'important':''}">
+        <div class="ann-title">${a.title}</div>
+        <div class="ann-msg">${a.message}</div>
+        <div class="ann-meta">📅 ${new Date(a.created_at).toLocaleDateString()}</div>
+      </div>`).join('');
+
+    // Wellness
+    const moods = ['😢','😟','😐','😊','🤩'];
+    document.getElementById('dashWellness').innerHTML = `
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        ${res.wellness.map(w=>`
+          <div class="wellness-dot" style="background:${w.mood>=4?'var(--green-dim)':w.mood>=3?'var(--gold-dim)':'var(--red-dim)'}">
+            ${moods[w.mood-1]}
+          </div>`).join('')}
+      </div>
+      <div style="font-size:0.78rem;color:var(--text2)">Last 7 days wellness check-ins (anonymous)</div>`;
+  }
+
+  async function loadProgress() {
+    if (!dashData) dashData = await fetch('/api/parent/dashboard').then(r=>r.json());
+    const grades = dashData.grades || [];
+
+    const progCtx = document.getElementById('progressChart').getContext('2d');
+    if (progressChart) progressChart.destroy();
+    progressChart = new Chart(progCtx, {
+      type: 'bar',
+      data: {
+        labels: grades.map(g => g.subject),
+        datasets: [{
+          label: 'Marks',
+          data: grades.map(g => g.marks),
+          backgroundColor: grades.map(g => g.marks>=85?'rgba(16,185,129,0.7)':g.marks>=70?'rgba(240,180,41,0.7)':'rgba(239,68,68,0.7)'),
+          borderRadius: 8, borderWidth: 0
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#8888aa', font: { size: 11 } } },
+          y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#8888aa', font: { size: 11 } }, min: 0, max: 100 }
+        }
+      }
+    });
+
+    document.getElementById('subjectList').innerHTML = grades.map(g => `
+      <div class="subject-row">
+        <div style="flex:1">
+          <div style="font-size:0.85rem;font-weight:600">${g.subject}</div>
+          <div class="progress-track" style="max-width:200px">
+            <div class="progress-fill ${g.marks>=85?'fill-green':g.marks>=70?'fill-gold':'fill-red'}" style="width:${g.marks}%"></div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:1.1rem;font-weight:800;color:${g.marks>=85?'var(--green)':g.marks>=70?'var(--gold)':'var(--red)'}">${g.marks}</span>
+          <span class="badge ${g.grade==='A+'?'badge-green':g.grade==='A'?'badge-blue':g.grade==='B'?'badge-gold':'badge-red'}">${g.grade}</span>
+        </div>
+      </div>`).join('');
+  }
+
+  async function loadAttendance() {
+    if (!dashData) dashData = await fetch('/api/parent/dashboard').then(r=>r.json());
+    const att = dashData.attendance || [];
+    const present = att.filter(a=>a.status==='present').length;
+    const absent = att.filter(a=>a.status==='absent').length;
+    const pct = att.length ? Math.round(present/att.length*100) : 0;
+    document.getElementById('attPresent').textContent = present;
+    document.getElementById('attAbsent').textContent = absent;
+    document.getElementById('attPct').textContent = pct + '%';
+    document.getElementById('attendanceRecord').innerHTML = att.map(a => `
+      <div class="att-day">
+        <span>${new Date(a.date+'T00:00:00').toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long'})}</span>
+        <span class="badge ${a.status==='present'?'badge-green':'badge-red'}">${a.status==='present'?'✅ Present':'❌ Absent'}</span>
+      </div>`).join('');
+  }
+
+  async function loadWellness() {
+    if (!dashData) dashData = await fetch('/api/parent/dashboard').then(r=>r.json());
+    const wellness = dashData.wellness || [];
+    const wellCtx = document.getElementById('wellnessChart').getContext('2d');
+    if (wellnessChart) wellnessChart.destroy();
+    wellnessChart = new Chart(wellCtx, {
+      type: 'line',
+      data: {
+        labels: wellness.map((_,i)=>`Day ${i+1}`).reverse(),
+        datasets: [{
+          label: 'Mood',
+          data: [...wellness].reverse().map(w=>w.mood),
+          borderColor: '#6c63ff',
+          backgroundColor: 'rgba(108,99,255,0.1)',
+          borderWidth: 2, fill: true, tension: 0.4,
+          pointBackgroundColor: '#6c63ff', pointRadius: 5
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#8888aa', font: { size: 11 } } },
+          y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#8888aa', font: { size: 11 } }, min: 1, max: 5 }
+        }
+      }
+    });
+    const moods = ['😢','😟','😐','😊','🤩'];
+    const sentColors = { positive: 'var(--green)', neutral: 'var(--gold)', negative: 'var(--red)' };
+    document.getElementById('wellnessList').innerHTML = wellness.map(w => `
+      <div style="padding:12px;background:var(--surface2);border-radius:10px;margin-bottom:8px;border-left:3px solid ${sentColors[w.sentiment]||'var(--blue)'}">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <span style="font-size:1.2rem">${moods[w.mood-1]}</span>
+          <span class="badge ${w.sentiment==='positive'?'badge-green':w.sentiment==='negative'?'badge-red':'badge-gold'}">${w.sentiment}</span>
+          <span style="font-size:0.7rem;color:var(--text3)">${new Date(w.created_at).toLocaleDateString()}</span>
+        </div>
+        <div style="font-size:0.82rem;color:var(--text2);font-style:italic">"${w.message}"</div>
+      </div>`).join('') || '<div style="color:var(--text3);font-size:0.82rem">No check-ins yet</div>';
+  }
+
+  async function loadAnnouncements() {
+    if (!dashData) dashData = await fetch('/api/parent/dashboard').then(r=>r.json());
+    document.getElementById('annList').innerHTML = (dashData.announcements||[]).map(a => `
+      <div class="ann-item ${a.important?'important':''}">
+        ${a.important?'<span class="badge badge-red" style="margin-bottom:6px">🔴 Important</span><br>':''}
+        <div class="ann-title">${a.title}</div>
+        <div class="ann-msg">${a.message}</div>
+        <div class="ann-meta">By ${a.by_name} · ${new Date(a.created_at).toLocaleDateString()}</div>
+      </div>`).join('') || '<div style="color:var(--text3)">No announcements</div>';
+  }
+
+  async function loadChat() {
+    const res = await fetch('/api/chat/get').then(r=>r.json());
+    chatId = res.chatId;
+    const el = document.getElementById('chatMessages');
+    if (!res.messages?.length) {
+      el.innerHTML = '<div style="text-align:center;color:var(--text3);font-size:0.8rem;padding:20px">No messages yet. Start the conversation!</div>';
+      return;
+    }
+    el.innerHTML = res.messages.map(m => {
+      const isMine = m.from_name?.includes('Arjun') || m.from_name?.includes('parent');
+      return `
+        <div class="chat-msg ${isMine?'mine':''}">
+          ${!isMine?`<div class="chat-name">${m.from_name}</div>`:''}
+          <div class="chat-bubble">${m.text}</div>
+          <div class="chat-time">${new Date(m.created_at).toLocaleTimeString()}</div>
+        </div>`;
+    }).join('');
+    el.scrollTop = el.scrollHeight;
+  }
+
+  async function sendMessage() {
+    const text = document.getElementById('chatInput').value.trim();
+    if (!text) return;
+    document.getElementById('chatInput').value = '';
+    await fetch('/api/chat/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chatId, text })
+    });
+    loadChat();
+  }
+
+  // Bus ETA countdown
+  let busMinutes = 12;
+  setInterval(() => {
+    if (busMinutes > 0) busMinutes--;
+    const el = document.getElementById('busMinutes');
+    const etaEl = document.getElementById('busEta');
+    if (el) el.textContent = busMinutes + ' minutes';
+    if (etaEl) etaEl.textContent = busMinutes + ' mins';
+  }, 60000);
+
+  async function logout() {
+    await fetch('/auth/logout', { method: 'POST' });
+    window.location.href = '/login.html';
+  }
+</script>
+</body>
+</html>
