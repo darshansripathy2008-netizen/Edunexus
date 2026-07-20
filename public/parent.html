@@ -423,8 +423,7 @@
       <div class="card-header">
         <div class="card-title">📍 Bus Stops Today</div>
       </div>
-      <div id="busStops">
-        ${['School (3:30 PM)','Stop 1 - Anna Nagar (3:38 PM)','Stop 2 - T Nagar (3:45 PM)','Stop 3 - Your Stop (3:52 PM)','Stop 4 - Adyar (4:00 PM)','Stop 5 - End (4:15 PM)'].map((stop,i) => `
+      <div id="busStops"></div>
           <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)">
             <div style="width:28px;height:28px;border-radius:50%;background:${i<=2?'var(--green-dim)':'var(--surface2)'};border:2px solid ${i<=2?'var(--green)':'var(--border)'};display:flex;align-items:center;justify-content:center;font-size:0.7rem;font-weight:700;color:${i<=2?'var(--green)':'var(--text3)'}">${i+1}</div>
             <div style="font-size:0.85rem;${i===3?'font-weight:700;color:var(--blue)':''}">${stop}</div>
@@ -708,6 +707,25 @@
     await fetch('/auth/logout', { method: 'POST' });
     window.location.href = '/login.html';
   }
+  // Fix bus stops
+  const stops = [
+    'School (3:30 PM)',
+    'Stop 1 - Anna Nagar (3:38 PM)',
+    'Stop 2 - T Nagar (3:45 PM)',
+    'Stop 3 - Your Stop (3:52 PM)',
+    'Stop 4 - Adyar (4:00 PM)',
+    'Stop 5 - End (4:15 PM)'
+  ];
+  document.getElementById('busStops').innerHTML = stops.map((stop, i) => {
+    const passed = i <= 2;
+    const isNext = i === 3;
+    return `<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)">
+      <div style="width:28px;height:28px;border-radius:50%;background:${passed?'var(--green-dim)':'var(--surface2)'};border:2px solid ${passed?'var(--green)':'var(--border)'};display:flex;align-items:center;justify-content:center;font-size:0.7rem;font-weight:700;color:${passed?'var(--green)':'var(--text3)'}">${i+1}</div>
+      <div style="font-size:0.85rem;${isNext?'font-weight:700;color:var(--blue)':''}">${stop}</div>
+      ${passed ? '<span class="badge badge-green" style="margin-left:auto">✅ Passed</span>' : ''}
+      ${isNext ? '<span class="badge badge-blue" style="margin-left:auto">⏳ Next</span>' : ''}
+    </div>`;
+  }).join('');
 </script>
 </body>
 </html>
